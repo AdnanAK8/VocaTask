@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Square, Loader2, Keyboard, Sparkles, AlertCircle, Volume2, Globe } from 'lucide-react';
+import { Mic, Square, Loader2, Keyboard, Sparkles, AlertCircle, Volume2, Globe, Cloud } from 'lucide-react';
 import { api } from '../services/api';
 import type { ExtractedTask } from '../types/task';
 
@@ -49,6 +49,14 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
   const [selectedLang, setSelectedLang] = useState<string>(
     localStorage.getItem('speech_lang') || 'en-IN'
   );
+  const [recognitionMode, setRecognitionMode] = useState<'cloud' | 'browser'>(
+    (localStorage.getItem('rec_mode') as 'cloud' | 'browser') || 'cloud'
+  );
+
+  const handleModeChange = (mode: 'cloud' | 'browser') => {
+    setRecognitionMode(mode);
+    localStorage.setItem('rec_mode', mode);
+  };
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -173,13 +181,24 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
         const finalMime = mediaRecorder.mimeType || 'audio/webm';
         const audioBlob = new Blob(audioChunksRef.current, { type: finalMime });
         
-        // Prioritize live recognized text if captured accurately
-        if (liveTextBuffer && liveTextBuffer.trim().length > 3) {
-          await processDirectText(liveTextBuffer);
-        } else if (audioBlob.size > 1000) {
-          await processAudio(audioBlob, finalMime.includes('mp4') ? 'voice.m4a' : 'voice.webm');
+        if (recognitionMode === 'cloud') {
+          // Cloud Speech Recognition: send audio file directly to FastAPI -> Whisper-large-v3 / Gemini STT
+          if (audioBlob.size > 1000) {
+            const ext = finalMime.includes('mp4') ? 'voice.m4a' : 'voice.webm';
+            await processAudio(audioBlob, ext);
+          } else {
+            setErrorMsg("Audio was too short. Please hold or speak clearly.");
+          }
         } else {
-          setErrorMsg("Audio was too short. Please speak clearly.");
+          // Browser Native Mode: prioritize Web Speech API text
+          if (liveTextBuffer && liveTextBuffer.trim().length > 3) {
+            await processDirectText(liveTextBuffer);
+          } else if (audioBlob.size > 1000) {
+            const ext = finalMime.includes('mp4') ? 'voice.m4a' : 'voice.webm';
+            await processAudio(audioBlob, ext);
+          } else {
+            setErrorMsg("Could not detect clear speech. Try speaking again or switch to Cloud mode.");
+          }
         }
       };
 
@@ -231,7 +250,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
       onTaskExtracted(task);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to process voice';
-      setErrorMsg(msg);
+      if (msg.includes('requires an API key') || msg.includes('400')) {
+        setErrorMsg('Cloud Speech Recognition requires a free Groq or Gemini API key. Click Settings below to paste your key (takes 30s), or switch to Browser mode.');
+      } else {
+        setErrorMsg(msg);
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -261,7 +284,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
         <div className={`absolute -inset-0.5 rounded-3xl bg-gradient-to-r ${isRecording ? 'from-rose-500 to-indigo-500 opacity-40 blur-xl' : 'from-indigo-500/20 to-purple-500/20 opacity-30 blur-lg'} -z-10 transition-all duration-500`} />
 
         {/* Top Bar: Status & Spoken Language Selector */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mb-4">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mb-3">
           <div className="flex items-center space-x-1.5">
             <Sparkles className="w-4 h-4 text-indigo-400" />
             <span className="text-xs font-semibold tracking-wider uppercase text-indigo-300">
@@ -285,6 +308,33 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
               ))}
             </select>
           </div>
+        </div>
+
+        {/* Recognition Mode Selector Pill */}
+        <div className="flex items-center justify-center p-1 bg-slate-950/80 border border-slate-800 rounded-2xl max-w-sm mx-auto mb-4 shadow-inner">
+          <button
+            type="button"
+            onClick={() => handleModeChange('cloud')}
+            className={`flex-1 py-1.5 px-2.5 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all ${
+              recognitionMode === 'cloud'
+                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-600/30'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Cloud className="w-3.5 h-3.5 text-indigo-200" />
+            <span>Cloud Whisper (Siri/ChatGPT)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleModeChange('browser')}
+            className={`flex-1 py-1.5 px-2.5 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all ${
+              recognitionMode === 'browser'
+                ? 'bg-slate-800 text-white shadow-md'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <span>Browser Native</span>
+          </button>
         </div>
 
         {/* Live Speech Feedback or Rotating Prompt Hint */}
@@ -354,15 +404,23 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
               <span className="text-sm font-semibold text-rose-400 font-mono">
                 {formatSeconds(recordingSeconds)}
               </span>
-              <span className="text-xs text-slate-400 font-medium">Tap to Finish</span>
+              <span className="text-xs text-slate-400 font-medium">
+                {recognitionMode === 'cloud' ? 'Recording Audio • Tap to Transcribe' : 'Tap to Finish'}
+              </span>
             </div>
           ) : isProcessing ? (
             <p className="text-xs font-medium text-indigo-300 animate-pulse">
-              Translating & extracting structured task...
+              {recognitionMode === 'cloud'
+                ? 'Cloud Whisper transcribing & extracting task...'
+                : 'Translating & extracting structured task...'}
             </p>
           ) : (
             <p className="text-xs font-medium text-slate-300">
-              Tap to Speak <span className="text-slate-500">•</span> Siri/ChatGPT Quality
+              {recognitionMode === 'cloud' ? (
+                <>Tap to Record <span className="text-slate-500">•</span> Cloud Whisper (99+ Languages)</>
+              ) : (
+                <>Tap to Speak <span className="text-slate-500">•</span> Browser Live Speech</>
+              )}
             </p>
           )}
         </div>

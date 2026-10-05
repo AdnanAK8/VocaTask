@@ -77,13 +77,22 @@ async def transcribe_audio(
             mime_type = "audio/webm" if "webm" in filename.lower() else "audio/mp4"
             
             logger.info("Transcribing audio using Google Gemini multimodal...")
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=[
-                    types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
-                    "Transcribe this audio verbatim in the original spoken language. Return only the exact transcription text."
-                ]
-            )
+            try:
+                response = client.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=[
+                        types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
+                        "Transcribe this audio verbatim in the original spoken language. Return only the exact transcription text."
+                    ]
+                )
+            except Exception:
+                response = client.models.generate_content(
+                    model="gemini-1.5-flash",
+                    contents=[
+                        types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
+                        "Transcribe this audio verbatim in the original spoken language. Return only the exact transcription text."
+                    ]
+                )
             if response.text and response.text.strip():
                 logger.info(f"Gemini transcription completed: '{response.text.strip()}'")
                 return response.text.strip(), "auto"

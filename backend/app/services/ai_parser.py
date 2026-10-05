@@ -118,12 +118,61 @@ Output:
   "language": "en"
 }
 
+Input: "Mujhe Kal subah paanch baje uthana hai college ke liye"
+Output:
+{
+  "title": "Wake up for college",
+  "description": "Wake up early for college",
+  "scheduled_date": "2026-10-06",
+  "scheduled_time": "05:00",
+  "priority": "medium",
+  "category": "study",
+  "reminder_required": true,
+  "language": "hinglish"
+}
+
+Input: "Kal subah paanch baje uthna hai"
+Output:
+{
+  "title": "Wake up",
+  "description": "Wake up at 5:00 AM",
+  "scheduled_date": "2026-10-06",
+  "scheduled_time": "05:00",
+  "priority": "medium",
+  "category": "personal",
+  "reminder_required": true,
+  "language": "hinglish"
+}
+
 Return ONLY valid JSON matching the schema. No markdown formatting or extra commentary.
 """
+
+WORD_TO_NUMBER = {
+    'ek': 1, 'ik': 1, 'one': 1, 'एक': 1, 'ਇੱਕ': 1, 'ਇਕ': 1,
+    'do': 2, 'two': 2, 'दो': 2, 'ਦੋ': 2,
+    'teen': 3, 'tin': 3, 'three': 3, 'तीन': 3, 'ਤਿੰਨ': 3,
+    'chaar': 4, 'char': 4, 'four': 4, 'चार': 4, 'ਚਾਰ': 4,
+    'paanch': 5, 'panch': 5, 'panj': 5, 'five': 5, 'पाँच': 5, 'पांच': 5, 'ਪੰਜ': 5,
+    'chhe': 6, 'che': 6, 'chey': 6, 'six': 6, 'छह': 6, 'छः': 6, 'ਛੇ': 6,
+    'saat': 7, 'sat': 7, 'seven': 7, 'सात': 7, 'ਸੱਤ': 7,
+    'aath': 8, 'ath': 8, 'aat': 8, 'eight': 8, 'आठ': 8, 'ਅੱਠ': 8,
+    'nau': 9, 'no': 9, 'naun': 9, 'nine': 9, 'नौ': 9, 'ਨੌਂ': 9,
+    'das': 10, 'duss': 10, 'ten': 10, 'दस': 10, 'ਦਸ': 10,
+    'gyarah': 11, 'gyara': 11, 'giarah': 11, 'eleven': 11, 'ग्यारह': 11, 'ਗਿਆਰਾਂ': 11,
+    'barah': 12, 'bara': 12, 'baarah': 12, 'twelve': 12, 'बारह': 12, 'ਬਾਰਾਂ': 12,
+}
+
+TIME_MODIFIERS = [
+    'sadhe', 'saadhe', 'sava', 'sawwa', 'paune', 'pauna', 'dedh', 'dhaai', 'dhayi',
+    'साढ़े', 'ਸਾਢੇ', 'सवा', 'ਸਵਾ', 'पौने', 'ਪੌਣੇ', 'डेढ़', 'ਡੇਢ', 'ढाई', 'ਢਾਈ'
+]
 
 def polish_task_title(title: str) -> str:
     """
     Transforms colloquial phrases into professional task titles:
+    - 'uthana college ke liye' -> 'Wake up for College'
+    - 'college ke liye uthna' -> 'Wake up for College'
+    - 'uthna' -> 'Wake up'
     - 'database ka assignment submit' -> 'Submit database assignment'
     - 'rahul ko call' -> 'Call Rahul'
     - 'mom ko call' -> 'Call Mom'
@@ -131,6 +180,23 @@ def polish_task_title(title: str) -> str:
     """
     cleaned = title.strip()
     
+    # 1. Wake up patterns:
+    # Pattern: (uthana/uthna/jagna) [target] ke liye / lai / waste
+    m_wake1 = re.match(r'^(?:uthana|uthna|jagna|utho|wake\s*up|get\s*up|ਉੱਠਣਾ|ਉਠਣਾ|उठना|जागना)\s+(?:hai\s+)?(.+?)\s+(?:ke\s+liye|lai|waste|nu|ko)$', cleaned, re.IGNORECASE)
+    if m_wake1:
+        target = m_wake1.group(1).strip()
+        return f"Wake up for {target.capitalize()}"
+
+    # Pattern: [target] ke liye / lai / waste (uthana/uthna/jagna)
+    m_wake2 = re.match(r'^(.+?)\s+(?:ke\s+liye|lai|waste)\s+(?:uthana|uthna|jagna|utho|wake\s*up|get\s*up|ਉੱਠਣਾ|ਉਠਣਾ|उठना|जागना)(?:\s+hai)?$', cleaned, re.IGNORECASE)
+    if m_wake2:
+        target = m_wake2.group(1).strip()
+        return f"Wake up for {target.capitalize()}"
+
+    # Pattern: purely wake up
+    if re.match(r'^(?:uthana|uthna|jagna|utho|wake\s*up|get\s*up|ਉੱਠਣਾ|ਉਠਣਾ|उठना|जागना)(?:\s+hai)?$', cleaned, re.IGNORECASE):
+        return "Wake up"
+
     # Pattern: [object] ka/ki/ke [task] submit/complete/finish/dena
     m = re.match(r'^(.*?)\s+(?:ka|ki|ke|da|di|de)\s+(.*?)\s+(submit|complete|finish|karna|check|review|dena)$', cleaned, re.IGNORECASE)
     if m:
@@ -139,13 +205,21 @@ def polish_task_title(title: str) -> str:
         v = verb_map.get(verb.lower(), verb.capitalize())
         return f"{v} {obj} {noun}".strip()
     
+    # Pattern: [object] submit/complete/finish/review/pay/bharna
+    m_action = re.match(r'^(.*?)\s+(submit|complete|finish|check|review|pay|bharna)$', cleaned, re.IGNORECASE)
+    if m_action:
+        obj, verb = m_action.groups()
+        verb_map = {'submit': 'Submit', 'complete': 'Complete', 'finish': 'Finish', 'check': 'Check', 'review': 'Review', 'pay': 'Pay', 'bharna': 'Pay'}
+        v = verb_map.get(verb.lower(), verb.capitalize())
+        return f"{v} {obj}".strip()
+
     # Pattern: [person] ko/nu call/phone
     m2 = re.match(r'^(.*?)\s+(?:ko|nu)\s+(call|phone|milna)$', cleaned, re.IGNORECASE)
     if m2:
         person, action = m2.groups()
-        return f"Call {person}".strip()
+        return f"Call {person.capitalize()}".strip()
         
-    # Pattern: gym jana / gym jani
+    # Pattern: gym jana / walk / workout
     m3 = re.match(r'^(gym|walk|workout)\s+(?:jana|jani|jaana)$', cleaned, re.IGNORECASE)
     if m3:
         return m3.group(1).capitalize()
@@ -190,6 +264,8 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
     ]
     is_am = any(k in text_lower for k in am_keywords)
 
+    is_afternoon = any(k in text_lower for k in ["dopahar", "afternoon", "ਦੁਪਹਿਰ", "दोपहर"])
+
     # Convert native Hindi/Punjabi digits if present
     digit_map = {'०':'0','१':'1','२':'2','३':'3','४':'4','५':'5','६':'6','७':'7','੮':'8','९':'9',
                  '੦':'0','੧':'1','੨':'2','੩':'3','੪':'4','੫':'5','੬':'6','੭':'7','੮':'8','੯':'9'}
@@ -197,14 +273,50 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
     for k, v in digit_map.items():
         normalized_text = normalized_text.replace(k, v)
 
-    # Regex for hours with various separators and markers: "7 baje", "7 ਵਜੇ", "7 बजे", "7 PM", "7:00"
-    time_match = re.search(r'(\d{1,2})(?::(\d{2}))?\s*(?:baje|बजे|ਵਜੇ|pm|am|o\'clock)?', normalized_text)
-    
-    if time_match:
-        hour = int(time_match.group(1))
-        minutes = int(time_match.group(2)) if time_match.group(2) else 0
+    # Replace word numbers with digits before time markers or time of day
+    for word, num in WORD_TO_NUMBER.items():
+        normalized_text = re.sub(rf'(?i)\b{re.escape(word)}\s*(baje|बजे|ਵਜੇ|am|pm|o\'clock)', f'{num} \\1', normalized_text)
+        normalized_text = re.sub(rf'(?i)(subah|subh|shaam|sham|raat|morning|evening|night|सवेरे|सुबह|शाम|रात|ਸਵੇਰੇ|ਸ਼ਾਮ|ਰਾਤ)\s+{re.escape(word)}\b', f'\\1 {num}', normalized_text)
+
+    parsed_hour: Optional[int] = None
+    parsed_minutes: int = 0
+
+    # Check dedh (1:30) and dhaai (2:30)
+    if re.search(r'\b(dedh|ਡੇਢ|डेढ़)\s*(?:baje|बजे|ਵਜੇ)?\b', normalized_text):
+        parsed_hour = 1
+        parsed_minutes = 30
+    elif re.search(r'\b(dhaai|dhayi|ਢਾਈ|ढाई)\s*(?:baje|बजे|ਵਜੇ)?\b', normalized_text):
+        parsed_hour = 2
+        parsed_minutes = 30
+    else:
+        # Check saadhe / sava / paune
+        m_half = re.search(r'\b(?:sadhe|saadhe|ਸਾਢੇ|साढ़े)\s+(\d{1,2})', normalized_text)
+        m_sava = re.search(r'\b(?:sava|sawwa|ਸਵਾ|सवा)\s+(\d{1,2})', normalized_text)
+        m_paune = re.search(r'\b(?:paune|pauna|ਪੌਣੇ|पौने)\s+(\d{1,2})', normalized_text)
+        
+        if m_half:
+            parsed_hour = int(m_half.group(1))
+            parsed_minutes = 30
+        elif m_sava:
+            parsed_hour = int(m_sava.group(1))
+            parsed_minutes = 15
+        elif m_paune:
+            h = int(m_paune.group(1))
+            parsed_hour = (h - 1) if h > 1 else 12
+            parsed_minutes = 45
+        else:
+            time_match = re.search(r'(\d{1,2})(?::(\d{2}))?\s*(?:baje|बजे|ਵਜੇ|pm|am|o\'clock)?', normalized_text)
+            if time_match:
+                parsed_hour = int(time_match.group(1))
+                parsed_minutes = int(time_match.group(2)) if time_match.group(2) else 0
+
+    if parsed_hour is not None:
+        hour = parsed_hour
+        minutes = parsed_minutes
         if 1 <= hour <= 12:
             if is_pm and hour < 12:
+                hour += 12
+            elif is_afternoon and 1 <= hour <= 6:
                 hour += 12
             elif is_am and hour == 12:
                 hour = 0
@@ -217,7 +329,7 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
             task_time = "18:00"
         elif is_am:
             task_time = "09:00"
-        elif any(k in text_lower for k in ["dopahar", "afternoon", "ਦੁਪਹਿਰ", "दोपहर"]):
+        elif is_afternoon:
             task_time = "14:00"
         else:
             task_time = "10:00"
@@ -233,16 +345,21 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
         "mom", "dad", "mother", "father", "friend", "rahul", "party", "dinner", "lunch",
         "birthday", "gift", "family", "relative", "sister", "brother", "ਮੰਮੀ", "ਡੈਡੀ", "ਦੋਸਤ", "मम्मी", "पापा", "दोस्त"
     ]
-    if any(w in text_lower for w in personal_keywords):
+    wake_keywords = [
+        "uthna", "uthana", "jagna", "wake up", "get up", "ਉੱਠਣਾ", "ਉਠਣਾ", "उठना", "जागना"
+    ]
+    if any(w in text_lower for w in ["dbms", "database", "assignment", "study", "exam", "padhna", "homework", "class", "college", "school", "test", "course", "ਪੜ੍ਹਨਾ", "ਪੜ੍ਹਾਈ", "पढ़ना", "परीक्षा"]):
+        category = "study"
+    elif any(w in text_lower for w in personal_keywords):
         category = "personal"
     elif any(w in text_lower for w in health_keywords):
         category = "health"
-    elif any(w in text_lower for w in ["dbms", "database", "assignment", "study", "exam", "padhna", "homework", "class", "college", "test", "course", "ਪੜ੍ਹਨਾ", "ਪੜ੍ਹਾਈ", "पढ़ना", "परीक्षा"]):
-        category = "study"
     elif any(w in text_lower for w in ["meeting", "project", "office", "client", "boss", "work", "presentation", "interview", "client call", "email", "report", "standup", "sync", "ਮੀਟਿੰਗ", "ਕੰਮ", "मीटिंग"]):
         category = "work"
     elif any(w in text_lower for w in ["bill", "recharge", "fee", "pay", "bank", "money", "rent", "salary", "loan", "tax", "ਪੈਸੇ", "ਬਿੱਲ", "पैसे", "बिल"]):
         category = "finance"
+    elif any(w in text_lower for w in wake_keywords):
+        category = "personal"
 
     # 4. Priority detection
     priority = "medium"
@@ -273,6 +390,20 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
         "ਕੱਲ੍ਹ ਸ਼ਾਮ", "ਕੱਲ੍ਹ ਸਵੇਰੇ", "ਕੱਲ੍ਹ ਰਾਤ", "ਕੱਲ੍ਹ ਦੁਪਹਿਰ", "ਕੱਲ੍ਹ", "ਅੱਜ ਸ਼ਾਮ", "ਅੱਜ ਸਵੇਰੇ", "ਅੱਜ ਰਾਤ", "ਅੱਜ",
         "ਪਰਸੋਂ", "ਮੈਨੂੰ", "ਕਰਨਾ ਹੈ", "ਜਾਣਾ ਹੈ", "ਦੇਣਾ ਹੈ", "ਹੈ", "ਨੂੰ", "ਵਿੱਚ", "ਵਜੇ", "ਸਵੇਰੇ", "ਸ਼ਾਮ", "ਰਾਤ", "ਜ਼ਰੂਰੀ"
     ]
+
+    # Remove time modifiers (sadhe, sava, paune, etc.)
+    for mod in TIME_MODIFIERS:
+        clean_title = re.sub(rf'(?i)\b{re.escape(mod)}\b', '', clean_title)
+
+    # Remove number words associated with time markers or time of day
+    for word in sorted(WORD_TO_NUMBER.keys(), key=len, reverse=True):
+        clean_title = re.sub(rf'(?i)\b{re.escape(word)}\s*(?:baje|बजे|ਵਜੇ|am|pm|o\'clock)\b', '', clean_title)
+        clean_title = re.sub(rf'(?i)\b(?:subah|subh|shaam|sham|raat|morning|evening|night|सवेरे|सुबह|शाम|रात|ਸਵੇਰੇ|ਸ਼ਾਮ|ਰਾਤ)\s+{re.escape(word)}\b', '', clean_title)
+
+    # Strip standalone number word if it matched the parsed hour
+    for word, num in WORD_TO_NUMBER.items():
+        if parsed_hour is not None and num == parsed_hour:
+            clean_title = re.sub(rf'(?i)\b{re.escape(word)}\b', '', clean_title)
 
     # Clean Latin phrases with strict word boundary
     for phrase in sorted(latin_phrases, key=len, reverse=True):
@@ -353,14 +484,24 @@ async def parse_voice_to_task(
             client = genai.Client(api_key=gemini_key)
             prompt = f"{ref_info}\nUser Voice Transcript: \"{transcript}\""
             
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=f"{SYSTEM_PROMPT}\n\n{prompt}",
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.0
+            try:
+                response = client.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=f"{SYSTEM_PROMPT}\n\n{prompt}",
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.0
+                    )
                 )
-            )
+            except Exception:
+                response = client.models.generate_content(
+                    model="gemini-1.5-flash",
+                    contents=f"{SYSTEM_PROMPT}\n\n{prompt}",
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.0
+                    )
+                )
             if response.text:
                 parsed = json.loads(response.text)
                 parsed["original_transcript"] = transcript
