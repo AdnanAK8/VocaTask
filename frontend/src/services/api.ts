@@ -1,6 +1,6 @@
 import type { ExtractedTask, Task, TaskCreateInput } from '../types/task';
 
-const API_BASE = '/api';
+const API_BASE = (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '') + '/api';
 
 const getUserTimezone = (): string => {
   try {
@@ -8,6 +8,19 @@ const getUserTimezone = (): string => {
   } catch {
     return 'Asia/Kolkata';
   }
+};
+
+const getCustomKeyHeaders = (): Record<string, string> => {
+  const headers: Record<string, string> = {
+    'X-User-Timezone': getUserTimezone(),
+  };
+  const groq = localStorage.getItem('groq_api_key');
+  if (groq) headers['X-Groq-Key'] = groq;
+  const gemini = localStorage.getItem('gemini_api_key');
+  if (gemini) headers['X-Gemini-Key'] = gemini;
+  const openai = localStorage.getItem('openai_api_key');
+  if (openai) headers['X-OpenAI-Key'] = openai;
+  return headers;
 };
 
 export const api = {
@@ -22,7 +35,7 @@ export const api = {
       method: 'POST',
       body: formData,
       headers: {
-        'X-User-Timezone': getUserTimezone(),
+        ...getCustomKeyHeaders(),
       },
     });
 
@@ -42,6 +55,7 @@ export const api = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...getCustomKeyHeaders(),
       },
       body: JSON.stringify({
         text,
@@ -89,7 +103,6 @@ export const api = {
 
       if (res.ok) {
         const created: Task = await res.json();
-        // Update local cache
         const cached = localStorage.getItem('voicetasks_cache');
         const list: Task[] = cached ? JSON.parse(cached) : [];
         localStorage.setItem('voicetasks_cache', JSON.stringify([created, ...list]));
@@ -99,7 +112,6 @@ export const api = {
       console.warn('Failed to save to backend, falling back to local storage:', e);
     }
 
-    // Local fallback creation if backend is offline
     const localTask: Task = {
       id: 'local-' + Date.now(),
       ...taskData,
@@ -127,7 +139,6 @@ export const api = {
       console.warn('Could not toggle on server, toggling locally:', e);
     }
 
-    // Update in local cache
     const cached = localStorage.getItem('voicetasks_cache');
     if (cached) {
       const list: Task[] = JSON.parse(cached);

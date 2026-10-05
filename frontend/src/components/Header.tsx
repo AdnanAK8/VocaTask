@@ -1,12 +1,13 @@
 import React from 'react';
-import { Sparkles, Globe, Download } from 'lucide-react';
+import { Sparkles, Globe, Download, Settings } from 'lucide-react';
 
 interface HeaderProps {
   onInstallClick?: () => void;
   canInstall?: boolean;
+  onOpenSettings?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onInstallClick, canInstall }) => {
+export const Header: React.FC<HeaderProps> = ({ onInstallClick, canInstall, onOpenSettings }) => {
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good Morning';
@@ -47,6 +48,17 @@ export const Header: React.FC<HeaderProps> = ({ onInstallClick, canInstall }) =>
             >
               <Download className="w-3.5 h-3.5" />
               <span>Install App</span>
+            </button>
+          )}
+
+          {/* Settings Trigger */}
+          {onOpenSettings && (
+            <button
+              onClick={onOpenSettings}
+              aria-label="Settings"
+              className="p-2 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-850 active:scale-95 transition-all border border-slate-800 bg-slate-900/60"
+            >
+              <Settings className="w-4 h-4" />
             </button>
           )}
         </div>

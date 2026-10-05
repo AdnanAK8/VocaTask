@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Square, Loader2, Keyboard, Sparkles, AlertCircle, Volume2 } from 'lucide-react';
+import { Mic, Square, Loader2, Keyboard, Sparkles, AlertCircle, Volume2, Globe } from 'lucide-react';
 import { api } from '../services/api';
 import type { ExtractedTask } from '../types/task';
 
@@ -35,9 +35,10 @@ interface ExtendedWindow extends Window {
 
 interface VoiceRecorderProps {
   onTaskExtracted: (task: ExtractedTask) => void;
+  onOpenSettings?: () => void;
 }
 
-export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted }) => {
+export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, onOpenSettings }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -45,26 +46,42 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted })
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showTextInput, setShowTextInput] = useState(false);
   const [typedText, setTypedText] = useState('');
+  const [selectedLang, setSelectedLang] = useState<string>(
+    localStorage.getItem('speech_lang') || 'en-IN'
+  );
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
   const speechRecognizerRef = useRef<SpeechRecognitionInstance | null>(null);
 
+  // Supported speech recognition locales
+  const languages = [
+    { code: 'en-IN', label: '🇮🇳 Hinglish / English (India)' },
+    { code: 'hi-IN', label: '🇮🇳 Hindi (हिंदी)' },
+    { code: 'pa-IN', label: '🌾 Punjabi (ਪੰਜਾਬੀ)' },
+    { code: 'en-US', label: '🌐 English (Global)' },
+  ];
+
+  const handleLangChange = (code: string) => {
+    setSelectedLang(code);
+    localStorage.setItem('speech_lang', code);
+  };
+
   // Example voice prompts in various languages
   const samplePrompts = [
-    "Kal subah 10 baje DBMS assignment submit karna hai",
-    "Call Rahul tomorrow at 6 PM about the project",
+    "Kal subah 10 baje database ka assignment submit karna hai",
+    "Remind me to call mom tomorrow evening",
     "ਕੱਲ੍ਹ ਸ਼ਾਮ 7 ਵਜੇ gym ਜਾਣਾ ਹੈ",
-    "कल शाम 8 बजे डॉक्टर का अपॉइंटमेंट है",
-    "Pay electricity bill this Friday",
+    "कल शाम 6 बजे gym जाना है",
+    "Tomorrow at 6 PM I need to call Rahul about the project",
   ];
   const [promptIndex, setPromptIndex] = useState(0);
 
   useEffect(() => {
     const interval = setInterval(() => {
       setPromptIndex((prev) => (prev + 1) % samplePrompts.length);
-    }, 4000);
+    }, 4500);
     return () => clearInterval(interval);
   }, [samplePrompts.length]);
 
@@ -73,7 +90,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted })
     setLiveTranscript('');
     audioChunksRef.current = [];
 
-    // 1. Initialize browser-native live speech recognizer if supported
+    // 1. Initialize browser-native live speech recognizer with selected language
     const extWin = window as unknown as ExtendedWindow;
     const SpeechRec = extWin.SpeechRecognition || extWin.webkitSpeechRecognition;
     let liveTextBuffer = '';
@@ -83,6 +100,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted })
         const recognizer = new SpeechRec();
         recognizer.continuous = true;
         recognizer.interimResults = true;
+        recognizer.lang = selectedLang;
         
         recognizer.onresult = (event: SpeechRecognitionEvent) => {
           let currentInterim = '';
@@ -242,20 +260,39 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted })
         {/* Ambient Glow */}
         <div className={`absolute -inset-0.5 rounded-3xl bg-gradient-to-r ${isRecording ? 'from-rose-500 to-indigo-500 opacity-40 blur-xl' : 'from-indigo-500/20 to-purple-500/20 opacity-30 blur-lg'} -z-10 transition-all duration-500`} />
 
-        {/* Header Status */}
-        <div className="flex items-center justify-center space-x-2 mb-4">
-          <Sparkles className="w-4 h-4 text-indigo-400" />
-          <span className="text-xs font-semibold tracking-wider uppercase text-indigo-300">
-            {isRecording ? 'Listening in any language...' : isProcessing ? 'AI Processing Speech...' : 'Voice-First AI Task Creator'}
-          </span>
+        {/* Top Bar: Status & Spoken Language Selector */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mb-4">
+          <div className="flex items-center space-x-1.5">
+            <Sparkles className="w-4 h-4 text-indigo-400" />
+            <span className="text-xs font-semibold tracking-wider uppercase text-indigo-300">
+              {isRecording ? 'Listening in real-time...' : isProcessing ? 'AI Processing Speech...' : 'Voice AI Task Creator'}
+            </span>
+          </div>
+
+          {/* Language Selector Dropdown */}
+          <div className="flex items-center space-x-1 bg-slate-950/70 border border-slate-800 rounded-xl px-2 py-1">
+            <Globe className="w-3 h-3 text-indigo-400 flex-shrink-0" />
+            <select
+              value={selectedLang}
+              onChange={(e) => handleLangChange(e.target.value)}
+              disabled={isRecording || isProcessing}
+              className="bg-transparent text-[11px] text-slate-300 focus:outline-none cursor-pointer"
+            >
+              {languages.map((l) => (
+                <option key={l.code} value={l.code} className="bg-slate-900 text-slate-200">
+                  {l.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Live Speech Feedback or Rotating Prompt Hint */}
         <div className="min-h-12 flex items-center justify-center px-4 mb-4">
           {isRecording && liveTranscript ? (
-            <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-950/70 border border-indigo-500/30 text-xs text-indigo-200 animate-in fade-in">
+            <div className="w-full flex items-center gap-2 p-2.5 rounded-2xl bg-indigo-950/50 border border-indigo-500/40 text-xs text-indigo-200 animate-in fade-in">
               <Volume2 className="w-4 h-4 text-indigo-400 flex-shrink-0 animate-pulse" />
-              <p className="line-clamp-2 italic">"{liveTranscript}"</p>
+              <p className="line-clamp-2 text-left font-medium">"{liveTranscript}"</p>
             </div>
           ) : (
             <p className="text-xs sm:text-sm text-slate-400 italic transition-opacity duration-300">
@@ -325,16 +362,28 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted })
             </p>
           ) : (
             <p className="text-xs font-medium text-slate-300">
-              Tap to Speak <span className="text-slate-500">•</span> Any Language
+              Tap to Speak <span className="text-slate-500">•</span> Siri/ChatGPT Quality
             </p>
           )}
         </div>
 
         {/* Error notification banner */}
         {errorMsg && (
-          <div className="mt-4 p-3 rounded-2xl bg-rose-950/60 border border-rose-800/80 text-rose-300 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            <span>{errorMsg}</span>
+          <div className="mt-4 p-3 rounded-2xl bg-rose-950/60 border border-rose-800/80 text-rose-300 text-xs flex flex-col items-center gap-1.5 text-center">
+            <div className="flex items-center gap-1.5 font-semibold">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>Voice Notice</span>
+            </div>
+            <p className="text-[11px] text-slate-300">{errorMsg}</p>
+            {onOpenSettings && (
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                className="mt-1 text-[11px] text-indigo-400 hover:underline font-semibold"
+              >
+                Configure Cloud API Keys in Settings $\rightarrow$
+              </button>
+            )}
           </div>
         )}
 
@@ -356,7 +405,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted })
               type="text"
               value={typedText}
               onChange={(e) => setTypedText(e.target.value)}
-              placeholder="e.g. Kal shaam 6 baje gym jana hai..."
+              placeholder="e.g. Kal subah 10 baje database ka assignment submit karna hai..."
               className="flex-1 bg-slate-950/80 border border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
             <button

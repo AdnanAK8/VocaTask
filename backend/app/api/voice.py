@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 from fastapi import APIRouter, UploadFile, File, Header, HTTPException
 from app.schemas.task import ExtractedTask, TextProcessRequest
 from app.services.speech_service import transcribe_audio
@@ -11,11 +12,14 @@ router = APIRouter(prefix="/voice", tags=["Voice & AI"])
 @router.post("/process", response_model=ExtractedTask)
 async def process_voice_audio(
     audio: UploadFile = File(...),
-    x_user_timezone: str = Header(default="Asia/Kolkata", alias="X-User-Timezone")
+    x_user_timezone: str = Header(default="Asia/Kolkata", alias="X-User-Timezone"),
+    x_groq_key: Optional[str] = Header(default=None, alias="X-Groq-Key"),
+    x_gemini_key: Optional[str] = Header(default=None, alias="X-Gemini-Key"),
+    x_openai_key: Optional[str] = Header(default=None, alias="X-OpenAI-Key"),
 ):
     """
     Accepts raw audio recorded from PWA (e.g. .webm, .m4a, .mp4, .wav).
-    1. Transcribes audio to multilingual text.
+    1. Transcribes audio to multilingual text using Groq Whisper / OpenAI / Gemini.
     2. Runs AI task extraction with date/time resolution based on user's timezone.
     3. Returns validated ExtractedTask.
     """
@@ -27,16 +31,31 @@ async def process_voice_audio(
         logger.info(f"Received audio file '{audio.filename}' of size {len(audio_bytes)} bytes.")
         
         # 1. Transcribe
-        transcript, lang = await transcribe_audio(audio_bytes, audio.filename or "audio.webm")
+        transcript, lang = await transcribe_audio(
+            file_bytes=audio_bytes,
+            filename=audio.filename or "audio.webm",
+            groq_api_key=x_groq_key,
+            openai_api_key=x_openai_key,
+            gemini_api_key=x_gemini_key
+        )
         if not transcript:
             raise HTTPException(status_code=422, detail="Speech could not be recognized. Please speak clearly.")
             
         # 2. AI Parse Task
-        extracted = await parse_voice_to_task(transcript, timezone_name=x_user_timezone)
+        extracted = await parse_voice_to_task(
+            transcript=transcript,
+            timezone_name=x_user_timezone,
+            groq_api_key=x_groq_key,
+            openai_api_key=x_openai_key,
+            gemini_api_key=x_gemini_key
+        )
         if lang and lang != "auto":
             extracted.language = lang
             
         return extracted
+    except ValueError as ve:
+        # Clear actionable error when API keys are missing for cloud audio upload
+        raise HTTPException(status_code=400, detail=str(ve))
     except HTTPException:
         raise
     except Exception as e:
@@ -44,7 +63,12 @@ async def process_voice_audio(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/process-text", response_model=ExtractedTask)
-async def process_text_task(request: TextProcessRequest):
+async def process_text_task(
+    request: TextProcessRequest,
+    x_groq_key: Optional[str] = Header(default=None, alias="X-Groq-Key"),
+    x_gemini_key: Optional[str] = Header(default=None, alias="X-Gemini-Key"),
+    x_openai_key: Optional[str] = Header(default=None, alias="X-OpenAI-Key"),
+):
     """
     Accepts raw text (from browser-native Web Speech API or manual text input)
     and extracts structured task details.
@@ -53,5 +77,11 @@ async def process_text_task(request: TextProcessRequest):
         raise HTTPException(status_code=400, detail="Text cannot be empty.")
         
     tz = request.user_timezone or settings.DEFAULT_TIMEZONE
-    extracted = await parse_voice_to_task(request.text.strip(), timezone_name=tz)
+    extracted = await parse_voice_to_task(
+        transcript=request.text.strip(),
+        timezone_name=tz,
+        groq_api_key=x_groq_key,
+        openai_api_key=x_openai_key,
+        gemini_api_key=x_gemini_key
+    )
     return extracted

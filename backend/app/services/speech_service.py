@@ -1,29 +1,30 @@
 import os
 import io
 import logging
-from typing import Tuple
+from typing import Tuple, Optional
 from app.core.config import settings
 
 logger = logging.getLogger("speech_service")
 
-async def transcribe_audio(file_bytes: bytes, filename: str = "audio.webm") -> Tuple[str, str]:
+async def transcribe_audio(
+    file_bytes: bytes,
+    filename: str = "audio.webm",
+    groq_api_key: Optional[str] = None,
+    openai_api_key: Optional[str] = None,
+    gemini_api_key: Optional[str] = None
+) -> Tuple[str, str]:
     """
     Transcribes audio bytes to text using available STT providers:
-    1. Groq Whisper (whisper-large-v3) - fastest multilingual STT
+    1. Groq Whisper (whisper-large-v3) - fastest and highest accuracy
     2. OpenAI Whisper (whisper-1)
-    3. Fallback mock for local testing when keys are not yet configured
-    
-    Returns:
-        Tuple[str, str]: (transcription_text, language_code)
+    3. Google Gemini Multimodal Audio
     """
-    # 1. Try Groq Whisper if key is available
-    groq_key = settings.GROQ_API_KEY or os.environ.get("GROQ_API_KEY")
+    # 1. Try Groq Whisper
+    groq_key = groq_api_key or settings.GROQ_API_KEY or os.environ.get("GROQ_API_KEY")
     if groq_key:
         try:
             from groq import Groq
             client = Groq(api_key=groq_key)
-            
-            # Create in-memory file tuple for Groq SDK
             file_obj = (filename, file_bytes)
             
             logger.info("Transcribing audio using Groq Whisper-large-v3...")
@@ -37,18 +38,17 @@ async def transcribe_audio(file_bytes: bytes, filename: str = "audio.webm") -> T
             text = getattr(transcription, "text", "")
             language = getattr(transcription, "language", "auto")
             logger.info(f"Groq transcription completed: '{text}' (lang: {language})")
-            return text.strip(), language
+            if text.strip():
+                return text.strip(), language
         except Exception as e:
             logger.error(f"Groq Whisper transcription failed: {e}")
-            # Fall through to next provider
 
-    # 2. Try OpenAI Whisper if key is available
-    openai_key = settings.OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY")
+    # 2. Try OpenAI Whisper
+    openai_key = openai_api_key or settings.OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY")
     if openai_key:
         try:
             from openai import OpenAI
             client = OpenAI(api_key=openai_key)
-            
             file_obj = io.BytesIO(file_bytes)
             file_obj.name = filename
             
@@ -62,13 +62,36 @@ async def transcribe_audio(file_bytes: bytes, filename: str = "audio.webm") -> T
             text = getattr(transcription, "text", "")
             language = getattr(transcription, "language", "auto")
             logger.info(f"OpenAI transcription completed: '{text}' (lang: {language})")
-            return text.strip(), language
+            if text.strip():
+                return text.strip(), language
         except Exception as e:
             logger.error(f"OpenAI Whisper transcription failed: {e}")
 
-    # 3. Fallback when running without cloud keys
-    logger.warning("No STT API key configured (GROQ_API_KEY or OPENAI_API_KEY). Using fallback response.")
-    return (
-        "Kal shaam 6 baje DBMS project submit karna hai",
-        "hi"
+    # 3. Try Google Gemini Audio
+    gemini_key = gemini_api_key or settings.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY")
+    if gemini_key:
+        try:
+            from google import genai
+            from google.genai import types
+            client = genai.Client(api_key=gemini_key)
+            mime_type = "audio/webm" if "webm" in filename.lower() else "audio/mp4"
+            
+            logger.info("Transcribing audio using Google Gemini multimodal...")
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[
+                    types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
+                    "Transcribe this audio verbatim in the original spoken language. Return only the exact transcription text."
+                ]
+            )
+            if response.text and response.text.strip():
+                logger.info(f"Gemini transcription completed: '{response.text.strip()}'")
+                return response.text.strip(), "auto"
+        except Exception as e:
+            logger.error(f"Gemini transcription failed: {e}")
+
+    # If no keys worked, provide an actionable and clear message
+    raise ValueError(
+        "Audio transcription requires an API key for Groq Whisper, OpenAI, or Gemini. "
+        "Please enter a free Groq API key in Settings, or use Chrome/Safari live browser recognition."
     )

@@ -11,7 +11,7 @@ from app.schemas.task import ExtractedTask, PriorityType, CategoryType
 logger = logging.getLogger("ai_parser")
 
 # Master system prompt with Few-Shot Demonstrations and Strict Output Formatting
-SYSTEM_PROMPT = """You are an expert multilingual task extraction AI engine.
+SYSTEM_PROMPT = """You are an expert multilingual task extraction AI engine (Siri/ChatGPT quality).
 The user speaks in any language (English, Hindi, Punjabi, Hinglish, Spanish, French, etc.).
 Your goal is to parse the voice transcript, extract the core actionable task, resolve relative dates/times against the user's current reference time, and return a clean structured JSON object.
 
@@ -44,23 +44,23 @@ Reference timestamp and timezone will be provided in the user prompt.
 - "7 baje" with "shaam" -> "19:00", NOT "07:00".
 
 ### Category Mapping:
-- study: assignments, exams, classes, homework, college, dbms, studying.
+- study: assignments, exams, classes, homework, college, dbms, database, studying.
 - work: meetings, projects, clients, presentations, office, emails.
-- health: gym, workouts, walks, medicine, doctor, dentist, exercises.
+- health: gym, workouts, walks, badminton, medicine, doctor, dentist, exercises.
 - finance: bills, payments, recharge, bank, money, fees, salary, rent.
 - personal: family, friends, mom, dad, parties, dinners, birthdays.
 - general: other miscellaneous tasks.
 
 ### Few-Shot Demonstrations:
 
-Input: "Kal shaam 6 baje DBMS project submit karna hai"
+Input: "Kal subah 10 baje database ka assignment submit karna hai"
 Output:
 {
-  "title": "Submit DBMS Project",
-  "description": "DBMS project submission",
+  "title": "Submit database assignment",
+  "description": "Database assignment submission",
   "scheduled_date": "2026-10-06",
-  "scheduled_time": "18:00",
-  "priority": "high",
+  "scheduled_time": "10:00",
+  "priority": "medium",
   "category": "study",
   "reminder_required": true,
   "language": "hinglish"
@@ -69,7 +69,7 @@ Output:
 Input: "ਕੱਲ੍ਹ ਸ਼ਾਮ 7 ਵਜੇ gym ਜਾਣਾ ਹੈ"
 Output:
 {
-  "title": "Gym Workout",
+  "title": "Gym",
   "description": "Evening gym session",
   "scheduled_date": "2026-10-06",
   "scheduled_time": "19:00",
@@ -79,34 +79,78 @@ Output:
   "language": "pa"
 }
 
-Input: "कल सुबह 10 बजे डॉक्टर के पास जाना है"
-Output:
-{
-  "title": "Doctor Appointment",
-  "description": "Visit doctor in the morning",
-  "scheduled_date": "2026-10-06",
-  "scheduled_time": "10:00",
-  "priority": "high",
-  "category": "health",
-  "reminder_required": true,
-  "language": "hi"
-}
-
-Input: "Remind me to call Mom tomorrow at 8 PM"
+Input: "Remind me to call mom tomorrow evening"
 Output:
 {
   "title": "Call Mom",
-  "description": "Catch up with mom",
+  "description": "Call mom in the evening",
   "scheduled_date": "2026-10-06",
-  "scheduled_time": "20:00",
+  "scheduled_time": "18:00",
   "priority": "medium",
   "category": "personal",
   "reminder_required": true,
   "language": "en"
 }
 
+Input: "कल शाम 6 बजे gym जाना है"
+Output:
+{
+  "title": "Gym Workout",
+  "description": "Evening gym workout",
+  "scheduled_date": "2026-10-06",
+  "scheduled_time": "18:00",
+  "priority": "medium",
+  "category": "health",
+  "reminder_required": true,
+  "language": "hi"
+}
+
+Input: "Tomorrow at 6 PM I need to call Rahul about the project"
+Output:
+{
+  "title": "Call Rahul about the project",
+  "description": "Project discussion with Rahul",
+  "scheduled_date": "2026-10-06",
+  "scheduled_time": "18:00",
+  "priority": "medium",
+  "category": "work",
+  "reminder_required": true,
+  "language": "en"
+}
+
 Return ONLY valid JSON matching the schema. No markdown formatting or extra commentary.
 """
+
+def polish_task_title(title: str) -> str:
+    """
+    Transforms colloquial phrases into professional task titles:
+    - 'database ka assignment submit' -> 'Submit database assignment'
+    - 'rahul ko call' -> 'Call Rahul'
+    - 'mom ko call' -> 'Call Mom'
+    - 'electricity bill pay' -> 'Pay electricity bill'
+    """
+    cleaned = title.strip()
+    
+    # Pattern: [object] ka/ki/ke [task] submit/complete/finish/dena
+    m = re.match(r'^(.*?)\s+(?:ka|ki|ke|da|di|de)\s+(.*?)\s+(submit|complete|finish|karna|check|review|dena)$', cleaned, re.IGNORECASE)
+    if m:
+        obj, noun, verb = m.groups()
+        verb_map = {'submit': 'Submit', 'complete': 'Complete', 'finish': 'Finish', 'karna': 'Do', 'check': 'Check', 'review': 'Review', 'dena': 'Submit'}
+        v = verb_map.get(verb.lower(), verb.capitalize())
+        return f"{v} {obj} {noun}".strip()
+    
+    # Pattern: [person] ko/nu call/phone
+    m2 = re.match(r'^(.*?)\s+(?:ko|nu)\s+(call|phone|milna)$', cleaned, re.IGNORECASE)
+    if m2:
+        person, action = m2.groups()
+        return f"Call {person}".strip()
+        
+    # Pattern: gym jana / gym jani
+    m3 = re.match(r'^(gym|walk|workout)\s+(?:jana|jani|jaana)$', cleaned, re.IGNORECASE)
+    if m3:
+        return m3.group(1).capitalize()
+
+    return cleaned
 
 def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
     """
@@ -193,7 +237,7 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
         category = "personal"
     elif any(w in text_lower for w in health_keywords):
         category = "health"
-    elif any(w in text_lower for w in ["dbms", "assignment", "study", "exam", "padhna", "homework", "class", "college", "test", "course", "ਪੜ੍ਹਨਾ", "ਪੜ੍ਹਾਈ", "पढ़ना", "परीक्षा"]):
+    elif any(w in text_lower for w in ["dbms", "database", "assignment", "study", "exam", "padhna", "homework", "class", "college", "test", "course", "ਪੜ੍ਹਨਾ", "ਪੜ੍ਹਾਈ", "पढ़ना", "परीक्षा"]):
         category = "study"
     elif any(w in text_lower for w in ["meeting", "project", "office", "client", "boss", "work", "presentation", "interview", "client call", "email", "report", "standup", "sync", "ਮੀਟਿੰਗ", "ਕੰਮ", "मीटिंग"]):
         category = "work"
@@ -210,9 +254,12 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
     # 5. Clean Title Extraction
     clean_title = transcript
     latin_phrases = [
-        "remind me to", "remind me", "tomorrow at", "tomorrow", "today at", "today",
-        "yesterday", "day after tomorrow", "i need to", "i have to", "have to", "need to",
+        "remind me to", "remind me", "tomorrow at", "tomorrow evening", "tomorrow morning",
+        "tomorrow afternoon", "tomorrow night", "tomorrow", "today at", "today evening",
+        "today morning", "today afternoon", "today night", "today", "yesterday",
+        "day after tomorrow", "i need to", "i have to", "have to", "need to",
         "urgent", "important", "asap", "at", "o'clock", "before",
+        "evening", "morning", "afternoon", "night",
         "kal shaam", "kal subah", "kal raat", "kal dopahar", "kal",
         "aaj shaam", "aaj subah", "aaj raat", "aaj", "parson",
         "mujhe", "karna hai", "karni hai", "jana hai", "jani hai", "dena hai", "deni hai",
@@ -243,6 +290,9 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
     clean_title = re.sub(r'[,\.\-–—:!?]+', ' ', clean_title)
     clean_title = re.sub(r'\s+', ' ', clean_title).strip()
     
+    # Apply natural action rephrasing
+    clean_title = polish_task_title(clean_title)
+
     if not clean_title or len(clean_title) < 2:
         clean_title = transcript.strip()
     else:
@@ -268,13 +318,20 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
         "language": detected_lang
     }
 
-async def parse_voice_to_task(transcript: str, timezone_name: str = "Asia/Kolkata") -> ExtractedTask:
+async def parse_voice_to_task(
+    transcript: str,
+    timezone_name: str = "Asia/Kolkata",
+    groq_api_key: Optional[str] = None,
+    openai_api_key: Optional[str] = None,
+    gemini_api_key: Optional[str] = None
+) -> ExtractedTask:
     """
     Takes raw multilingual transcript and extracts structured task metadata.
     Attempts:
-    1. Groq LLM (llama-3.3-70b-versatile) with system demonstrations
-    2. OpenAI LLM (gpt-4o-mini)
-    3. Intelligent Rule-Based Multilingual Fallback
+    1. Google Gemini (gemini-2.5-flash / gemini-1.5-flash) with structured JSON
+    2. Groq LLM (llama-3.3-70b-versatile) with system demonstrations
+    3. OpenAI LLM (gpt-4o-mini)
+    4. Refined Heuristic Multilingual Parser with Natural Title Polishing
     """
     try:
         tz = zoneinfo.ZoneInfo(timezone_name)
@@ -287,11 +344,34 @@ async def parse_voice_to_task(transcript: str, timezone_name: str = "Asia/Kolkat
     now_user = datetime.now(tz)
     ref_info = f"Current timestamp: {now_user.strftime('%Y-%m-%d %H:%M:%S')}, Day: {now_user.strftime('%A')}, Timezone: {timezone_name}"
 
-    groq_key = settings.GROQ_API_KEY or os.environ.get("GROQ_API_KEY")
-    openai_key = settings.OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY")
+    # 1. Try Gemini if key is provided and valid
+    gemini_key = gemini_api_key or settings.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY")
+    if gemini_key and len(gemini_key) > 10:
+        try:
+            from google import genai
+            from google.genai import types
+            client = genai.Client(api_key=gemini_key)
+            prompt = f"{ref_info}\nUser Voice Transcript: \"{transcript}\""
+            
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=f"{SYSTEM_PROMPT}\n\n{prompt}",
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.0
+                )
+            )
+            if response.text:
+                parsed = json.loads(response.text)
+                parsed["original_transcript"] = transcript
+                logger.info(f"Gemini parsed task successfully: {parsed.get('title')}")
+                return ExtractedTask(**parsed)
+        except Exception as e:
+            logger.warning(f"Gemini task parsing fallback: {e}")
 
-    # 1. Try Groq LLM
-    if groq_key:
+    # 2. Try Groq LLM (Llama 3.3 70B)
+    groq_key = groq_api_key or settings.GROQ_API_KEY or os.environ.get("GROQ_API_KEY")
+    if groq_key and len(groq_key) > 10:
         try:
             from groq import Groq
             client = Groq(api_key=groq_key)
@@ -309,12 +389,14 @@ async def parse_voice_to_task(transcript: str, timezone_name: str = "Asia/Kolkat
             raw_json = completion.choices[0].message.content
             parsed = json.loads(raw_json)
             parsed["original_transcript"] = transcript
+            logger.info(f"Groq parsed task successfully: {parsed.get('title')}")
             return ExtractedTask(**parsed)
         except Exception as e:
-            logger.error(f"Groq task parsing error: {e}")
+            logger.warning(f"Groq task parsing fallback: {e}")
 
-    # 2. Try OpenAI LLM
-    if openai_key:
+    # 3. Try OpenAI LLM
+    openai_key = openai_api_key or settings.OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY")
+    if openai_key and len(openai_key) > 10:
         try:
             from openai import OpenAI
             client = OpenAI(api_key=openai_key)
@@ -334,10 +416,10 @@ async def parse_voice_to_task(transcript: str, timezone_name: str = "Asia/Kolkat
             parsed["original_transcript"] = transcript
             return ExtractedTask(**parsed)
         except Exception as e:
-            logger.error(f"OpenAI task parsing error: {e}")
+            logger.warning(f"OpenAI task parsing fallback: {e}")
 
-    # 3. Fallback to refined intelligent multilingual heuristic
-    logger.info("Using refined intelligent heuristic multilingual parser.")
+    # 4. Fallback to refined intelligent multilingual heuristic
+    logger.info("Using refined intelligent heuristic multilingual parser with natural title polishing.")
     parsed = heuristic_parse_task(transcript, now_user)
     parsed["original_transcript"] = transcript
     return ExtractedTask(**parsed)

@@ -4,12 +4,14 @@ import { VoiceRecorder } from './components/VoiceRecorder';
 import { TaskConfirmModal } from './components/TaskConfirmModal';
 import { TaskList } from './components/TaskList';
 import { InstallPwaBanner } from './components/InstallPwaBanner';
+import { SettingsModal } from './components/SettingsModal';
 import { api } from './services/api';
 import type { Task, ExtractedTask, TaskCreateInput } from './types/task';
 
 export const App: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [extractedTask, setExtractedTask] = useState<ExtractedTask | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // Load tasks on startup
   useEffect(() => {
@@ -68,12 +70,15 @@ export const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-indigo-500 selection:text-white pb-12">
       {/* Top Header */}
-      <Header />
+      <Header onOpenSettings={() => setIsSettingsOpen(true)} />
 
       {/* Main Content Area */}
       <main className="flex-1 w-full max-w-3xl mx-auto px-2 sm:px-4 py-4 space-y-6">
         {/* Voice Recorder Hero */}
-        <VoiceRecorder onTaskExtracted={handleTaskExtracted} />
+        <VoiceRecorder 
+          onTaskExtracted={handleTaskExtracted}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+        />
 
         {/* Task List Section */}
         <TaskList
@@ -91,6 +96,12 @@ export const App: React.FC = () => {
           onCancel={() => setExtractedTask(null)}
         />
       )}
+
+      {/* AI Settings Modal */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+      />
 
       {/* Install App as PWA Banner */}
       <InstallPwaBanner />
