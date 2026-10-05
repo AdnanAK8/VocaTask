@@ -1,7 +1,37 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Square, Loader2, Keyboard, Sparkles, AlertCircle } from 'lucide-react';
+import { Mic, Square, Loader2, Keyboard, Sparkles, AlertCircle, Volume2 } from 'lucide-react';
 import { api } from '../services/api';
 import type { ExtractedTask } from '../types/task';
+
+// Type definitions for browser SpeechRecognition
+interface SpeechRecognitionEvent extends Event {
+  results: {
+    [index: number]: {
+      [index: number]: {
+        transcript: string;
+      };
+      isFinal: boolean;
+    };
+    length: number;
+  };
+}
+
+interface SpeechRecognitionInstance extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onresult: (event: SpeechRecognitionEvent) => void;
+  onerror: (event: Event) => void;
+  onend: () => void;
+}
+
+interface ExtendedWindow extends Window {
+  SpeechRecognition?: new () => SpeechRecognitionInstance;
+  webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
+}
 
 interface VoiceRecorderProps {
   onTaskExtracted: (task: ExtractedTask) => void;
@@ -11,6 +41,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted })
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [liveTranscript, setLiveTranscript] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showTextInput, setShowTextInput] = useState(false);
   const [typedText, setTypedText] = useState('');
@@ -18,6 +49,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted })
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
+  const speechRecognizerRef = useRef<SpeechRecognitionInstance | null>(null);
 
   // Example voice prompts in various languages
   const samplePrompts = [
@@ -38,16 +70,54 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted })
 
   const startRecording = async () => {
     setErrorMsg(null);
+    setLiveTranscript('');
     audioChunksRef.current = [];
 
+    // 1. Initialize browser-native live speech recognizer if supported
+    const extWin = window as unknown as ExtendedWindow;
+    const SpeechRec = extWin.SpeechRecognition || extWin.webkitSpeechRecognition;
+    let liveTextBuffer = '';
+
+    if (SpeechRec) {
+      try {
+        const recognizer = new SpeechRec();
+        recognizer.continuous = true;
+        recognizer.interimResults = true;
+        
+        recognizer.onresult = (event: SpeechRecognitionEvent) => {
+          let currentInterim = '';
+          for (let i = 0; i < event.results.length; i++) {
+            currentInterim += event.results[i][0].transcript;
+          }
+          liveTextBuffer = currentInterim;
+          setLiveTranscript(currentInterim);
+        };
+
+        recognizer.onerror = (e) => {
+          console.warn('SpeechRecognition notice:', e);
+        };
+
+        recognizer.start();
+        speechRecognizerRef.current = recognizer;
+      } catch (err) {
+        console.warn('Live SpeechRecognition could not start:', err);
+      }
+    }
+
+    // 2. Initialize MediaRecorder for high-fidelity audio capture
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Microphone access not supported in this browser. Please use text input.');
+        throw new Error('Microphone access is not supported on this browser. Please use text input.');
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        }
+      });
       
-      // Determine optimal mimeType supported by browser
       let mimeType = 'audio/webm';
       if (!MediaRecorder.isTypeSupported('audio/webm')) {
         if (MediaRecorder.isTypeSupported('audio/mp4')) {
@@ -70,21 +140,32 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted })
       };
 
       mediaRecorder.onstop = async () => {
-        // Stop all audio tracks to turn off device mic indicator
+        // Stop audio tracks
         stream.getTracks().forEach((track) => track.stop());
+
+        // Stop live recognizer if running
+        if (speechRecognizerRef.current) {
+          try {
+            speechRecognizerRef.current.stop();
+          } catch {
+            // Ignored
+          }
+        }
 
         const finalMime = mediaRecorder.mimeType || 'audio/webm';
         const audioBlob = new Blob(audioChunksRef.current, { type: finalMime });
         
-        if (audioBlob.size < 1000) {
+        // Prioritize live recognized text if captured accurately
+        if (liveTextBuffer && liveTextBuffer.trim().length > 3) {
+          await processDirectText(liveTextBuffer);
+        } else if (audioBlob.size > 1000) {
+          await processAudio(audioBlob, finalMime.includes('mp4') ? 'voice.m4a' : 'voice.webm');
+        } else {
           setErrorMsg("Audio was too short. Please speak clearly.");
-          return;
         }
-
-        await processAudio(audioBlob, finalMime.includes('mp4') ? 'voice.m4a' : 'voice.webm');
       };
 
-      mediaRecorder.start(250); // Slice data every 250ms
+      mediaRecorder.start(250);
       setIsRecording(true);
       setRecordingSeconds(0);
 
@@ -110,6 +191,20 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted })
     setIsRecording(false);
   };
 
+  const processDirectText = async (text: string) => {
+    setIsProcessing(true);
+    setErrorMsg(null);
+    try {
+      const task = await api.processVoiceText(text);
+      onTaskExtracted(task);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to parse task';
+      setErrorMsg(msg);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const processAudio = async (blob: Blob, filename: string) => {
     setIsProcessing(true);
     setErrorMsg(null);
@@ -128,19 +223,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted })
     e.preventDefault();
     if (!typedText.trim() || isProcessing) return;
 
-    setIsProcessing(true);
-    setErrorMsg(null);
-    try {
-      const task = await api.processVoiceText(typedText);
-      setTypedText('');
-      setShowTextInput(false);
-      onTaskExtracted(task);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to parse task';
-      setErrorMsg(msg);
-    } finally {
-      setIsProcessing(false);
-    }
+    await processDirectText(typedText);
+    setTypedText('');
+    setShowTextInput(false);
   };
 
   const formatSeconds = (sec: number) => {
@@ -165,11 +250,18 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted })
           </span>
         </div>
 
-        {/* Rotating Prompt Hint */}
-        <div className="h-10 flex items-center justify-center px-4 mb-4">
-          <p className="text-xs sm:text-sm text-slate-400 italic transition-opacity duration-300">
-            "{samplePrompts[promptIndex]}"
-          </p>
+        {/* Live Speech Feedback or Rotating Prompt Hint */}
+        <div className="min-h-12 flex items-center justify-center px-4 mb-4">
+          {isRecording && liveTranscript ? (
+            <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-950/70 border border-indigo-500/30 text-xs text-indigo-200 animate-in fade-in">
+              <Volume2 className="w-4 h-4 text-indigo-400 flex-shrink-0 animate-pulse" />
+              <p className="line-clamp-2 italic">"{liveTranscript}"</p>
+            </div>
+          ) : (
+            <p className="text-xs sm:text-sm text-slate-400 italic transition-opacity duration-300">
+              "{samplePrompts[promptIndex]}"
+            </p>
+          )}
         </div>
 
         {/* Waveform Animation (When recording) */}
