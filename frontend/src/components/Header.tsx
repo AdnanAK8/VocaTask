@@ -8,12 +8,12 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ onInstallClick, canInstall, onOpenSettings }) => {
-  const getGreeting = () => {
+  const [greeting] = React.useState(() => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good Morning';
     if (hour < 17) return 'Good Afternoon';
     return 'Good Evening';
-  };
+  });
 
   return (
     <header className="sticky top-0 z-30 backdrop-blur-xl bg-slate-950/80 border-b border-slate-800/80 px-4 py-3 sm:px-6">
@@ -30,7 +30,7 @@ export const Header: React.FC<HeaderProps> = ({ onInstallClick, canInstall, onOp
               VoiceTasks <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">AI</span>
             </h1>
             <p className="text-xs text-slate-400">
-              {getGreeting()}, <span className="text-slate-200 font-medium">Sarab</span> 👋
+              {greeting}, <span className="text-slate-200 font-medium">Sarab</span> 👋
             </p>
           </div>
         </div>

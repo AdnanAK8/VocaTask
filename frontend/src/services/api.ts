@@ -24,28 +24,6 @@ const getCustomKeyHeaders = (): Record<string, string> => {
 };
 
 export const api = {
-  /**
-   * Sends audio blob recorded from the microphone to the FastAPI speech & AI pipeline.
-   */
-  async processVoiceAudio(audioBlob: Blob, filename = 'recording.webm'): Promise<ExtractedTask> {
-    const formData = new FormData();
-    formData.append('audio', audioBlob, filename);
-
-    const response = await fetch(`${API_BASE}/voice/process`, {
-      method: 'POST',
-      body: formData,
-      headers: {
-        ...getCustomKeyHeaders(),
-      },
-    });
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({ detail: 'Failed to process voice' }));
-      throw new Error(err.detail || `Server error (${response.status})`);
-    }
-
-    return response.json();
-  },
 
   /**
    * Sends direct text (from Web Speech API or manual input) to AI task parser.

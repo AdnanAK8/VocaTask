@@ -12,8 +12,8 @@ Speak naturally in **any language** (English, Hindi, Punjabi, Hinglish, Spanish,
   * **Android:** Native "Install App" browser prompt via Web App Manifest & Service Worker.
   * **iOS (iPhone/iPad):** Zero-friction "Add to Home Screen" support (no App Store fees or Mac required).
 * **🎙️ Voice Capture in Any Language:**
-  * High-fidelity Web Audio API recording with soundwave visualizer & recording timer.
-  * Real-time multilingual Speech-to-Text (Groq Whisper-large-v3 / OpenAI Whisper).
+  * Real-time browser-native Web Speech API with soundwave visualizer & live transcription.
+  * Zero latency, zero cloud upload fees, and works natively across Chrome, Safari, and Edge.
 * **🧠 Context-Aware AI Task Extraction:**
   * Automatically resolves relative dates (*"kal"*, *"parson"*, *"today"*, *"next Monday"*) based on user timezone.
   * Resolves colloquial times (*"subah"* $\rightarrow$ 09:00, *"shaam"* $\rightarrow$ 18:00, *"raat"* $\rightarrow$ 21:00).
@@ -33,20 +33,18 @@ Speak naturally in **any language** (English, Hindi, Punjabi, Hinglish, Spanish,
 flowchart TD
     subgraph Client ["Client Device (iOS / Android / Desktop)"]
         UI["VoiceTasks PWA UI (React + Tailwind)"]
-        MIC["Microphone Recorder (MediaRecorder API)"]
+        MIC["Browser Native Web Speech API"]
         MODAL["AI Confirmation Sheet"]
     end
 
     subgraph Backend ["FastAPI Server (Python)"]
-        API["POST /api/voice/process"]
-        STT["Multilingual STT (Groq Whisper / OpenAI)"]
-        LLM["AI Parser & Date Normalizer"]
-        DB[(SQLite / Supabase Postgres)]
+        API["POST /api/voice/process-text"]
+        LLM["AI Parser & Multilingual Date Normalizer"]
+        DB[(SQLite Persistent Storage)]
     end
 
-    MIC -->|Audio Blob| API
-    API --> STT
-    STT -->|Transcript| LLM
+    MIC -->|Live Transcribed Text| API
+    API --> LLM
     LLM -->|Structured Task JSON| MODAL
     MODAL -->|Confirm & Save| DB
     DB --> UI
@@ -107,6 +105,26 @@ npm install
 npm run dev
 ```
 * Frontend will be running at: `http://localhost:5173`
+
+---
+
+### 🧪 Running Tests
+
+#### Backend Test Suite (25 Tests across API, CRUD, and AI Heuristics)
+```bash
+cd backend
+# Windows:
+.\venv\Scripts\python.exe -m unittest discover -s tests -v
+# Mac/Linux:
+python -m unittest discover -s tests -v
+```
+
+#### Frontend Linter & Build Verification
+```bash
+cd frontend
+npm run lint
+npm run build
+```
 
 ---
 

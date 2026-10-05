@@ -11,15 +11,19 @@ interface TaskCardProps {
 export const TaskCard: React.FC<TaskCardProps> = ({ task, onToggle, onDelete }) => {
   const isCompleted = task.status === 'completed';
 
+  const [dates] = React.useState(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+    return { today, tomorrow };
+  });
+
   const formatDateTime = () => {
     if (!task.scheduled_date && !task.scheduled_time) return null;
     
     let dateStr = task.scheduled_date || '';
     if (task.scheduled_date) {
-      const today = new Date().toISOString().split('T')[0];
-      const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-      if (task.scheduled_date === today) dateStr = 'Today';
-      else if (task.scheduled_date === tomorrow) dateStr = 'Tomorrow';
+      if (task.scheduled_date === dates.today) dateStr = 'Today';
+      else if (task.scheduled_date === dates.tomorrow) dateStr = 'Tomorrow';
     }
 
     return (

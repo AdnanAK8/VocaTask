@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Square, Loader2, Keyboard, Sparkles, AlertCircle, Volume2, Globe, Cloud } from 'lucide-react';
+import { Mic, Square, Loader2, Keyboard, Sparkles, AlertCircle, Volume2, Globe } from 'lucide-react';
 import { api } from '../services/api';
 import type { ExtractedTask } from '../types/task';
 
@@ -49,19 +49,10 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
   const [selectedLang, setSelectedLang] = useState<string>(
     localStorage.getItem('speech_lang') || 'en-IN'
   );
-  const [recognitionMode, setRecognitionMode] = useState<'cloud' | 'browser'>(
-    (localStorage.getItem('rec_mode') as 'cloud' | 'browser') || 'cloud'
-  );
 
-  const handleModeChange = (mode: 'cloud' | 'browser') => {
-    setRecognitionMode(mode);
-    localStorage.setItem('rec_mode', mode);
-  };
-
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
   const speechRecognizerRef = useRef<SpeechRecognitionInstance | null>(null);
+  const liveTextBufferRef = useRef<string>('');
 
   // Supported speech recognition locales
   const languages = [
@@ -93,139 +84,80 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
     return () => clearInterval(interval);
   }, [samplePrompts.length]);
 
-  const startRecording = async () => {
+  const startRecording = () => {
     setErrorMsg(null);
     setLiveTranscript('');
-    audioChunksRef.current = [];
+    liveTextBufferRef.current = '';
 
-    // 1. Initialize browser-native live speech recognizer with selected language
     const extWin = window as unknown as ExtendedWindow;
     const SpeechRec = extWin.SpeechRecognition || extWin.webkitSpeechRecognition;
-    let liveTextBuffer = '';
 
-    if (SpeechRec) {
-      try {
-        const recognizer = new SpeechRec();
-        recognizer.continuous = true;
-        recognizer.interimResults = true;
-        recognizer.lang = selectedLang;
-        
-        recognizer.onresult = (event: SpeechRecognitionEvent) => {
-          let currentInterim = '';
-          for (let i = 0; i < event.results.length; i++) {
-            currentInterim += event.results[i][0].transcript;
-          }
-          liveTextBuffer = currentInterim;
-          setLiveTranscript(currentInterim);
-        };
-
-        recognizer.onerror = (e) => {
-          console.warn('SpeechRecognition notice:', e);
-        };
-
-        recognizer.start();
-        speechRecognizerRef.current = recognizer;
-      } catch (err) {
-        console.warn('Live SpeechRecognition could not start:', err);
-      }
+    if (!SpeechRec) {
+      setErrorMsg('Voice recognition is not supported in this browser. Please use Chrome/Safari or type your task below.');
+      setShowTextInput(true);
+      return;
     }
 
-    // 2. Initialize MediaRecorder for high-fidelity audio capture
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Microphone access is not supported on this browser. Please use text input.');
-      }
+      const recognizer = new SpeechRec();
+      recognizer.continuous = true;
+      recognizer.interimResults = true;
+      recognizer.lang = selectedLang;
 
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
+      recognizer.onresult = (event: SpeechRecognitionEvent) => {
+        let currentInterim = '';
+        for (let i = 0; i < event.results.length; i++) {
+          currentInterim += event.results[i][0].transcript;
         }
-      });
-      
-      let mimeType = 'audio/webm';
-      if (!MediaRecorder.isTypeSupported('audio/webm')) {
-        if (MediaRecorder.isTypeSupported('audio/mp4')) {
-          mimeType = 'audio/mp4';
-        } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
-          mimeType = 'audio/ogg';
-        } else {
-          mimeType = '';
-        }
-      }
-
-      const options = mimeType ? { mimeType } : undefined;
-      const mediaRecorder = new MediaRecorder(stream, options);
-      mediaRecorderRef.current = mediaRecorder;
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
+        liveTextBufferRef.current = currentInterim;
+        setLiveTranscript(currentInterim);
       };
 
-      mediaRecorder.onstop = async () => {
-        // Stop audio tracks
-        stream.getTracks().forEach((track) => track.stop());
-
-        // Stop live recognizer if running
-        if (speechRecognizerRef.current) {
-          try {
-            speechRecognizerRef.current.stop();
-          } catch {
-            // Ignored
-          }
-        }
-
-        const finalMime = mediaRecorder.mimeType || 'audio/webm';
-        const audioBlob = new Blob(audioChunksRef.current, { type: finalMime });
-        
-        if (recognitionMode === 'cloud') {
-          // Cloud Speech Recognition: send audio file directly to FastAPI -> Whisper-large-v3 / Gemini STT
-          if (audioBlob.size > 1000) {
-            const ext = finalMime.includes('mp4') ? 'voice.m4a' : 'voice.webm';
-            await processAudio(audioBlob, ext);
-          } else {
-            setErrorMsg("Audio was too short. Please hold or speak clearly.");
-          }
-        } else {
-          // Browser Native Mode: prioritize Web Speech API text
-          if (liveTextBuffer && liveTextBuffer.trim().length > 3) {
-            await processDirectText(liveTextBuffer);
-          } else if (audioBlob.size > 1000) {
-            const ext = finalMime.includes('mp4') ? 'voice.m4a' : 'voice.webm';
-            await processAudio(audioBlob, ext);
-          } else {
-            setErrorMsg("Could not detect clear speech. Try speaking again or switch to Cloud mode.");
-          }
-        }
+      recognizer.onerror = (e) => {
+        console.warn('SpeechRecognition notice:', e);
       };
 
-      mediaRecorder.start(250);
+      recognizer.onend = () => {
+        // Recognition completed
+      };
+
+      recognizer.start();
+      speechRecognizerRef.current = recognizer;
       setIsRecording(true);
       setRecordingSeconds(0);
 
       timerRef.current = window.setInterval(() => {
         setRecordingSeconds((prev) => prev + 1);
       }, 1000);
-    } catch (err: unknown) {
-      console.error('Microphone error:', err);
-      const msg = err instanceof Error ? err.message : 'Could not access microphone';
-      setErrorMsg(msg.includes('Permission') ? 'Microphone permission denied. Enable it in browser settings.' : msg);
+    } catch (err) {
+      console.error('Microphone/speech error:', err);
+      setErrorMsg('Could not access microphone. Please check browser microphone permissions.');
       setIsRecording(false);
     }
   };
 
-  const stopRecording = () => {
+  const stopRecording = async () => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
+
+    if (speechRecognizerRef.current) {
+      try {
+        speechRecognizerRef.current.stop();
+      } catch {
+        // Ignored
+      }
     }
+
     setIsRecording(false);
+
+    const spokenText = (liveTextBufferRef.current || liveTranscript).trim();
+    if (spokenText.length >= 2) {
+      await processDirectText(spokenText);
+    } else {
+      setErrorMsg('No speech detected. Please speak clearly into your microphone.');
+    }
   };
 
   const processDirectText = async (text: string) => {
@@ -237,24 +169,6 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to parse task';
       setErrorMsg(msg);
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const processAudio = async (blob: Blob, filename: string) => {
-    setIsProcessing(true);
-    setErrorMsg(null);
-    try {
-      const task = await api.processVoiceAudio(blob, filename);
-      onTaskExtracted(task);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to process voice';
-      if (msg.includes('requires an API key') || msg.includes('400')) {
-        setErrorMsg('Cloud Speech Recognition requires a free Groq or Gemini API key. Click Settings below to paste your key (takes 30s), or switch to Browser mode.');
-      } else {
-        setErrorMsg(msg);
-      }
     } finally {
       setIsProcessing(false);
     }
@@ -284,11 +198,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
         <div className={`absolute -inset-0.5 rounded-3xl bg-gradient-to-r ${isRecording ? 'from-rose-500 to-indigo-500 opacity-40 blur-xl' : 'from-indigo-500/20 to-purple-500/20 opacity-30 blur-lg'} -z-10 transition-all duration-500`} />
 
         {/* Top Bar: Status & Spoken Language Selector */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mb-3">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mb-4">
           <div className="flex items-center space-x-1.5">
             <Sparkles className="w-4 h-4 text-indigo-400" />
             <span className="text-xs font-semibold tracking-wider uppercase text-indigo-300">
-              {isRecording ? 'Listening in real-time...' : isProcessing ? 'AI Processing Speech...' : 'Voice AI Task Creator'}
+              {isRecording ? 'Listening in real-time...' : isProcessing ? 'AI Extracting Task...' : 'Voice AI Task Creator'}
             </span>
           </div>
 
@@ -308,33 +222,6 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
               ))}
             </select>
           </div>
-        </div>
-
-        {/* Recognition Mode Selector Pill */}
-        <div className="flex items-center justify-center p-1 bg-slate-950/80 border border-slate-800 rounded-2xl max-w-sm mx-auto mb-4 shadow-inner">
-          <button
-            type="button"
-            onClick={() => handleModeChange('cloud')}
-            className={`flex-1 py-1.5 px-2.5 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all ${
-              recognitionMode === 'cloud'
-                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-600/30'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Cloud className="w-3.5 h-3.5 text-indigo-200" />
-            <span>Cloud Whisper (Siri/ChatGPT)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleModeChange('browser')}
-            className={`flex-1 py-1.5 px-2.5 rounded-xl text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all ${
-              recognitionMode === 'browser'
-                ? 'bg-slate-800 text-white shadow-md'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <span>Browser Native</span>
-          </button>
         </div>
 
         {/* Live Speech Feedback or Rotating Prompt Hint */}
@@ -405,22 +292,16 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
                 {formatSeconds(recordingSeconds)}
               </span>
               <span className="text-xs text-slate-400 font-medium">
-                {recognitionMode === 'cloud' ? 'Recording Audio • Tap to Transcribe' : 'Tap to Finish'}
+                Tap to Finish Speaking
               </span>
             </div>
           ) : isProcessing ? (
             <p className="text-xs font-medium text-indigo-300 animate-pulse">
-              {recognitionMode === 'cloud'
-                ? 'Cloud Whisper transcribing & extracting task...'
-                : 'Translating & extracting structured task...'}
+              AI translating & extracting structured task...
             </p>
           ) : (
             <p className="text-xs font-medium text-slate-300">
-              {recognitionMode === 'cloud' ? (
-                <>Tap to Record <span className="text-slate-500">•</span> Cloud Whisper (99+ Languages)</>
-              ) : (
-                <>Tap to Speak <span className="text-slate-500">•</span> Browser Live Speech</>
-              )}
+              Tap to Speak <span className="text-slate-500">•</span> Multilingual Voice Recognition
             </p>
           )}
         </div>
@@ -439,7 +320,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
                 onClick={onOpenSettings}
                 className="mt-1 text-[11px] text-indigo-400 hover:underline font-semibold"
               >
-                Configure Cloud API Keys in Settings $\rightarrow$
+                Configure Settings $\rightarrow$
               </button>
             )}
           </div>

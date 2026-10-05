@@ -61,17 +61,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
           <div className="p-3.5 rounded-2xl bg-indigo-950/40 border border-indigo-800/40 text-xs text-slate-300 space-y-1.5">
             <div className="flex items-center gap-2 text-indigo-300 font-semibold">
               <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Siri & ChatGPT Level Accuracy</span>
+              <span>AI Task Parsing Settings</span>
             </div>
             <p className="text-[11px] text-slate-400">
-              By default, your device's built-in Google / Apple speech engine captures your voice. To enable cloud Whisper Large-v3 and Llama 3.3 70B, add a free key below.
+              Voice recognition runs directly on your device via the browser with zero latency. You can optionally provide an API key below for deep LLM reasoning, or leave empty to use the fast built-in multilingual parser.
             </p>
           </div>
 
           {/* Groq API Key Input */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-slate-300">Groq API Key (Free Whisper-large-v3)</label>
+              <label className="text-xs font-semibold text-slate-300">Groq API Key (Llama 3.3 70B)</label>
               <a
                 href="https://console.groq.com/keys"
                 target="_blank"

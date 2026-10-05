@@ -15,7 +15,7 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onToggle, onDelete })
   const [activeTab, setActiveTab] = useState<TabType>('today');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const [todayStr] = useState(() => new Date().toISOString().split('T')[0]);
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {

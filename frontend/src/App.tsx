@@ -13,11 +13,6 @@ export const App: React.FC = () => {
   const [extractedTask, setExtractedTask] = useState<ExtractedTask | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-  // Load tasks on startup
-  useEffect(() => {
-    loadTasks();
-  }, []);
-
   const loadTasks = async () => {
     try {
       const data = await api.getTasks();
@@ -26,6 +21,21 @@ export const App: React.FC = () => {
       console.error('Error loading tasks:', err);
     }
   };
+
+  // Load tasks on startup
+  useEffect(() => {
+    let active = true;
+    api.getTasks()
+      .then((data) => {
+        if (active) setTasks(data);
+      })
+      .catch((err) => {
+        console.error('Error loading tasks:', err);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleTaskExtracted = (extracted: ExtractedTask) => {
     setExtractedTask(extracted);

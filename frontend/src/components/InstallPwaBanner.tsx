@@ -9,17 +9,17 @@ interface BeforeInstallPromptEvent extends Event {
 export const InstallPwaBanner: React.FC = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showBanner, setShowBanner] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
-  const [showIOSModal, setShowIOSModal] = useState(false);
-
-  useEffect(() => {
-    // Detect iOS Safari
+  const [isIOS] = useState(() => {
+    if (typeof window === 'undefined') return false;
     const userAgent = window.navigator.userAgent.toLowerCase();
     const isIosDevice = /iphone|ipad|ipod/.test(userAgent);
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as unknown as { standalone?: boolean }).standalone;
-    
-    if (isIosDevice && !isStandalone) {
-      setIsIOS(true);
+    return Boolean(isIosDevice && !isStandalone);
+  });
+  const [showIOSModal, setShowIOSModal] = useState(false);
+
+  useEffect(() => {
+    if (isIOS) {
       // Show prompt banner after 3 seconds for iOS
       const timer = setTimeout(() => setShowBanner(true), 3000);
       return () => clearTimeout(timer);
@@ -37,7 +37,7 @@ export const InstallPwaBanner: React.FC = () => {
     return () => {
       window.removeEventListener('beforeinstallprompt', handler);
     };
-  }, []);
+  }, [isIOS]);
 
   const handleInstallClick = async () => {
     if (isIOS) {
