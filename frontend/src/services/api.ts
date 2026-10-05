@@ -1,4 +1,4 @@
-import type { ExtractedTask, Task, TaskCreateInput } from '../types/task';
+import type { ExtractedTask, Task, TaskCreateInput, TaskUpdateInput } from '../types/task';
 
 const API_BASE = (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '') + '/api';
 
@@ -100,6 +100,44 @@ export const api = {
     const list: Task[] = cached ? JSON.parse(cached) : [];
     localStorage.setItem('voicetasks_cache', JSON.stringify([localTask, ...list]));
     return localTask;
+  },
+
+  async updateTask(id: string, updates: TaskUpdateInput): Promise<Task> {
+    try {
+      const response = await fetch(`${API_BASE}/tasks/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+
+      if (response.ok) {
+        const updated: Task = await response.json();
+        const cached = localStorage.getItem('voicetasks_cache');
+        if (cached) {
+          const list: Task[] = JSON.parse(cached);
+          localStorage.setItem(
+            'voicetasks_cache',
+            JSON.stringify(list.map((task) => task.id === id ? updated : task)),
+          );
+        }
+        return updated;
+      }
+    } catch (e) {
+      console.warn('Could not update task on server, updating local cache:', e);
+    }
+
+    const cached = localStorage.getItem('voicetasks_cache');
+    if (cached) {
+      const list: Task[] = JSON.parse(cached);
+      const taskIndex = list.findIndex((task) => task.id === id);
+      if (taskIndex !== -1) {
+        const updated = { ...list[taskIndex], ...updates };
+        list[taskIndex] = updated;
+        localStorage.setItem('voicetasks_cache', JSON.stringify(list));
+        return updated;
+      }
+    }
+    throw new Error('Task not found');
   },
 
   /**

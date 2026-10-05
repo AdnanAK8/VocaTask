@@ -41,3 +41,5 @@ export interface TaskCreateInput {
   original_transcript?: string | null;
   language?: string | null;
 }
+
+export type TaskUpdateInput = Partial<TaskCreateInput>;
