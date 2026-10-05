@@ -29,6 +29,24 @@ def init_db():
                 created_at TEXT NOT NULL
             )
         """)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM tasks")
+        count = cursor.fetchone()[0]
+        if count == 0:
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            now_iso = datetime.now().isoformat()
+            sample_tasks = [
+                (str(uuid.uuid4()), "Submit DBMS assignment", "Database assignment submission", today_str, "10:00", "medium", "study", "pending", 1, "Kal subah 10 baje database ka assignment submit karna hai", "hinglish", now_iso),
+                (str(uuid.uuid4()), "Call Rahul at 6 PM", "Call Rahul about project updates", today_str, "18:00", "medium", "work", "pending", 1, "Call Rahul at 6 PM", "en", now_iso),
+                (str(uuid.uuid4()), "Gym at 7 PM", "Evening workout session", today_str, "19:00", "low", "health", "pending", 1, "Gym at 7 PM", "en", now_iso),
+            ]
+            conn.executemany("""
+                INSERT INTO tasks (
+                    id, title, description, scheduled_date, scheduled_time,
+                    priority, category, status, reminder_required,
+                    original_transcript, language, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, sample_tasks)
     conn.close()
 
 # Initialize database schema on load

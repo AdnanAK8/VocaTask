@@ -144,6 +144,19 @@ Output:
   "language": "hinglish"
 }
 
+Input: "Kal shaam 8 baje DBMS padhna hai"
+Output:
+{
+  "title": "Study DBMS",
+  "description": "Study DBMS",
+  "scheduled_date": "2026-10-06",
+  "scheduled_time": "20:00",
+  "priority": "medium",
+  "category": "study",
+  "reminder_required": true,
+  "language": "hinglish"
+}
+
 Return ONLY valid JSON matching the schema. No markdown formatting or extra commentary.
 """
 
@@ -170,34 +183,60 @@ TIME_MODIFIERS = [
 def polish_task_title(title: str) -> str:
     """
     Transforms colloquial phrases into professional task titles:
+    - 'DBMS padhna' -> 'Study DBMS'
     - 'uthana college ke liye' -> 'Wake up for College'
-    - 'college ke liye uthna' -> 'Wake up for College'
-    - 'uthna' -> 'Wake up'
     - 'database ka assignment submit' -> 'Submit database assignment'
     - 'rahul ko call' -> 'Call Rahul'
-    - 'mom ko call' -> 'Call Mom'
-    - 'electricity bill pay' -> 'Pay electricity bill'
+    - 'call mom' -> 'Call Mom'
+    - 'gym jana' -> 'Gym'
     """
     cleaned = title.strip()
     
-    # 1. Wake up patterns:
-    # Pattern: (uthana/uthna/jagna) [target] ke liye / lai / waste
+    # 1. Study patterns:
+    # Pattern: [subject] padhna / padhni / padhai / padh / study / read
+    m_study1 = re.match(r'^(.*?)\s+(?:padhna|padhni|padhai|padh|study|read|learn|ਪੜ੍ਹਨਾ|ਪੜ੍ਹਾਈ|पढ़ना|पढना)(?:\s+hai)?$', cleaned, re.IGNORECASE)
+    if m_study1:
+        subj = m_study1.group(1).strip()
+        subj_str = subj.upper() if len(subj) <= 4 else subj.capitalize()
+        return f"Study {subj_str}"
+        
+    m_study2 = re.match(r'^(?:padhna|padhni|padhai|padh|study|read|learn|ਪੜ੍ਹਨਾ|ਪੜ੍ਹਾਈ|पढ़ना|पढना)\s+(.*?)(?:\s+hai)?$', cleaned, re.IGNORECASE)
+    if m_study2:
+        subj = m_study2.group(1).strip()
+        subj_str = subj.upper() if len(subj) <= 4 else subj.capitalize()
+        return f"Study {subj_str}"
+
+    # 2. Wake up patterns:
     m_wake1 = re.match(r'^(?:uthana|uthna|jagna|utho|wake\s*up|get\s*up|ਉੱਠਣਾ|ਉਠਣਾ|उठना|जागना)\s+(?:hai\s+)?(.+?)\s+(?:ke\s+liye|lai|waste|nu|ko)$', cleaned, re.IGNORECASE)
     if m_wake1:
         target = m_wake1.group(1).strip()
         return f"Wake up for {target.capitalize()}"
 
-    # Pattern: [target] ke liye / lai / waste (uthana/uthna/jagna)
     m_wake2 = re.match(r'^(.+?)\s+(?:ke\s+liye|lai|waste)\s+(?:uthana|uthna|jagna|utho|wake\s*up|get\s*up|ਉੱਠਣਾ|ਉਠਣਾ|उठना|जागना)(?:\s+hai)?$', cleaned, re.IGNORECASE)
     if m_wake2:
         target = m_wake2.group(1).strip()
         return f"Wake up for {target.capitalize()}"
 
-    # Pattern: purely wake up
     if re.match(r'^(?:uthana|uthna|jagna|utho|wake\s*up|get\s*up|ਉੱਠਣਾ|ਉਠਣਾ|उठना|जागना)(?:\s+hai)?$', cleaned, re.IGNORECASE):
         return "Wake up"
 
-    # Pattern: [object] ka/ki/ke [task] submit/complete/finish/dena
+    # 3. Call patterns:
+    m_call1 = re.match(r'^(.*?)\s+(?:ko|nu)\s+(?:call|phone|milna)(?:\s+karna)?$', cleaned, re.IGNORECASE)
+    if m_call1:
+        person = m_call1.group(1).strip()
+        return f"Call {person.title()}"
+
+    m_call2 = re.match(r'^(?:call|phone)\s+(?:to\s+)?(.*?)(?:\s+ko|\s+nu)?$', cleaned, re.IGNORECASE)
+    if m_call2:
+        person = m_call2.group(1).strip()
+        return f"Call {person.title()}"
+
+    m_call3 = re.match(r'^(.*?)\s+(?:call|phone)$', cleaned, re.IGNORECASE)
+    if m_call3:
+        person = m_call3.group(1).strip()
+        return f"Call {person.title()}"
+
+    # 4. Pattern: [object] ka/ki/ke [task] submit/complete/finish/dena
     m = re.match(r'^(.*?)\s+(?:ka|ki|ke|da|di|de)\s+(.*?)\s+(submit|complete|finish|karna|check|review|dena)$', cleaned, re.IGNORECASE)
     if m:
         obj, noun, verb = m.groups()
@@ -205,7 +244,7 @@ def polish_task_title(title: str) -> str:
         v = verb_map.get(verb.lower(), verb.capitalize())
         return f"{v} {obj} {noun}".strip()
     
-    # Pattern: [object] submit/complete/finish/review/pay/bharna
+    # 5. Pattern: [object] submit/complete/finish/review/pay/bharna
     m_action = re.match(r'^(.*?)\s+(submit|complete|finish|check|review|pay|bharna)$', cleaned, re.IGNORECASE)
     if m_action:
         obj, verb = m_action.groups()
@@ -213,16 +252,16 @@ def polish_task_title(title: str) -> str:
         v = verb_map.get(verb.lower(), verb.capitalize())
         return f"{v} {obj}".strip()
 
-    # Pattern: [person] ko/nu call/phone
-    m2 = re.match(r'^(.*?)\s+(?:ko|nu)\s+(call|phone|milna)$', cleaned, re.IGNORECASE)
-    if m2:
-        person, action = m2.groups()
-        return f"Call {person.capitalize()}".strip()
-        
-    # Pattern: gym jana / walk / workout
-    m3 = re.match(r'^(gym|walk|workout)\s+(?:jana|jani|jaana)$', cleaned, re.IGNORECASE)
+    # 6. Pattern: gym jana / walk / workout
+    m3 = re.match(r'^(gym|walk|workout)\s+(?:jana|jani|jaana|जाना|ਜਾਣਾ)$', cleaned, re.IGNORECASE)
     if m3:
         return m3.group(1).capitalize()
+
+    # 7. Pattern: pay [bill]
+    m_pay = re.match(r'^(?:pay|bharna)\s+(.*?)$', cleaned, re.IGNORECASE)
+    if m_pay:
+        bill = m_pay.group(1).strip()
+        return f"Pay {bill.title()}"
 
     return cleaned
 
