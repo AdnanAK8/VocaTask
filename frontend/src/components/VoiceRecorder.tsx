@@ -42,6 +42,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
   const [isProcessing, setIsProcessing] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [liveTranscript, setLiveTranscript] = useState('');
+  const [micVolume, setMicVolume] = useState<number>(0); // 0 to 100
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showTextInput, setShowTextInput] = useState(false);
   const [typedText, setTypedText] = useState('');
@@ -53,9 +54,13 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
   const speechRecognizerRef = useRef<SpeechRecognitionInstance | null>(null);
   const liveTextBufferRef = useRef<string>('');
 
-  // MediaRecorder audio capture refs
+  // MediaRecorder audio capture & AudioContext refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const volumeAnimRef = useRef<number | null>(null);
+  const maxVolumeRef = useRef<number>(0);
 
   const languages = [
     { code: 'en-IN', label: '🇮🇳 Hinglish / English (India)' },
@@ -85,32 +90,95 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
     return () => clearInterval(interval);
   }, [samplePrompts.length]);
 
+  const cleanupAudioResources = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (volumeAnimRef.current) {
+      cancelAnimationFrame(volumeAnimRef.current);
+      volumeAnimRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+  };
+
   const startRecording = async () => {
     setErrorMsg(null);
     setLiveTranscript('');
     liveTextBufferRef.current = '';
     audioChunksRef.current = [];
+    maxVolumeRef.current = 0;
+    setMicVolume(0);
 
-    // 1. Try initializing MediaRecorder for direct audio stream capture
+    let stream: MediaStream | null = null;
+
+    // 1. Obtain Microphone Audio Stream & Setup MediaRecorder
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mediaRecorder = new MediaRecorder(stream, {
-          mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : ''
-        });
-        mediaRecorder.ondataavailable = (event) => {
-          if (event.data && event.data.size > 0) {
-            audioChunksRef.current.push(event.data);
-          }
-        };
-        mediaRecorder.start(250);
-        mediaRecorderRef.current = mediaRecorder;
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaStreamRef.current = stream;
+
+        // Choose supported MIME type
+        let mimeType = '';
+        if (typeof MediaRecorder !== 'undefined') {
+          if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
+          else if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
+          else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
+          else if (MediaRecorder.isTypeSupported('audio/ogg')) mimeType = 'audio/ogg';
+
+          const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) {
+              audioChunksRef.current.push(event.data);
+            }
+          };
+          mediaRecorder.start(250);
+          mediaRecorderRef.current = mediaRecorder;
+        }
+
+        // Setup AudioContext & AnalyserNode for volume visualizer & gain check
+        const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        if (AudioCtx) {
+          const audioCtx = new AudioCtx();
+          audioContextRef.current = audioCtx;
+          const source = audioCtx.createMediaStreamSource(stream);
+          const analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 256;
+          source.connect(analyser);
+
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          const updateVolume = () => {
+            analyser.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+              sum += dataArray[i];
+            }
+            const average = sum / dataArray.length;
+            const volumePercent = Math.min(100, Math.round((average / 128) * 100));
+            setMicVolume(volumePercent);
+            if (volumePercent > maxVolumeRef.current) {
+              maxVolumeRef.current = volumePercent;
+            }
+            volumeAnimRef.current = requestAnimationFrame(updateVolume);
+          };
+          updateVolume();
+        }
       }
     } catch (err) {
-      console.warn('MediaRecorder audio stream capture unavailable:', err);
+      console.warn('Microphone stream error:', err);
+      setErrorMsg('Could not access microphone. Please check browser microphone permissions or unmute your mic.');
+      setShowTextInput(true);
+      return;
     }
 
-    // 2. Try initializing Web Speech API for live transcription
+    // 2. Setup Web Speech API for Real-time Text Feedback
     const extWin = window as unknown as ExtendedWindow;
     const SpeechRec = extWin.SpeechRecognition || extWin.webkitSpeechRecognition;
 
@@ -122,12 +190,15 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
         recognizer.lang = selectedLang;
 
         recognizer.onresult = (event: SpeechRecognitionEvent) => {
-          let currentInterim = '';
+          let fullTranscript = '';
           for (let i = 0; i < event.results.length; i++) {
-            currentInterim += event.results[i][0].transcript;
+            fullTranscript += event.results[i][0].transcript + ' ';
           }
-          liveTextBufferRef.current = currentInterim;
-          setLiveTranscript(currentInterim);
+          const trimmed = fullTranscript.trim();
+          if (trimmed) {
+            liveTextBufferRef.current = trimmed;
+            setLiveTranscript(trimmed);
+          }
         };
 
         recognizer.onerror = (e) => {
@@ -137,13 +208,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
         recognizer.start();
         speechRecognizerRef.current = recognizer;
       } catch (err) {
-        console.warn('Web Speech API start failed:', err);
+        console.warn('Web Speech API start error:', err);
       }
     }
 
-    // Check if at least one recording method was launched
     if (!mediaRecorderRef.current && !speechRecognizerRef.current) {
-      setErrorMsg('Microphone access unavailable or blocked. Please type your task below.');
+      setErrorMsg('Voice recognition unavailable on this browser. Please type your task below.');
       setShowTextInput(true);
       return;
     }
@@ -157,12 +227,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
   };
 
   const stopRecording = async () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-
-    // Stop Speech Recognition
+    // 1. Stop Speech Recognition
     if (speechRecognizerRef.current) {
       try {
         speechRecognizerRef.current.stop();
@@ -171,7 +236,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
       }
     }
 
-    // Stop MediaRecorder and collect stream
+    // 2. Stop MediaRecorder and finalize Audio Blob
     let recordedBlob: Blob | null = null;
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try {
@@ -183,13 +248,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
         if (audioChunksRef.current.length > 0) {
           recordedBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || 'audio/webm' });
         }
-        // Stop audio tracks
-        mediaRecorder.stream.getTracks().forEach((track) => track.stop());
       } catch (e) {
         console.warn('Error stopping MediaRecorder:', e);
       }
     }
 
+    cleanupAudioResources();
     setIsRecording(false);
     setIsProcessing(true);
     setErrorMsg(null);
@@ -197,18 +261,23 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
     const spokenText = (liveTextBufferRef.current || liveTranscript).trim();
 
     try {
-      // Option A: If live speech recognition produced text, process text directly
+      // Option A: If live Speech Recognition picked up text, process text directly
       if (spokenText.length >= 2) {
         const task = await api.processVoiceText(spokenText);
         onTaskExtracted(task);
       }
-      // Option B: If live speech text is empty/short but audio blob exists, upload audio to backend Whisper / Gemini
+      // Option B: If speech text is empty but audio blob exists, upload audio to backend / AI Whisper
       else if (recordedBlob && recordedBlob.size > 500) {
-        setLiveTranscript('Transcribing audio recording...');
+        setLiveTranscript('AI transcribing recorded voice...');
         const task = await api.processVoiceAudio(recordedBlob, selectedLang);
         onTaskExtracted(task);
       } else {
-        setErrorMsg('No speech detected. Please speak clearly into your microphone or type below.');
+        if (maxVolumeRef.current < 5) {
+          setErrorMsg('No sound detected from microphone. Please check your mic volume or type your task prompt below.');
+        } else {
+          setErrorMsg('No clear speech detected. Please speak into your mic or type below.');
+        }
+        setShowTextInput(true);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to parse task';
@@ -261,7 +330,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
           <div className="flex items-center space-x-1.5">
             <Sparkles className="w-4 h-4 text-indigo-400" />
             <span className="text-xs font-semibold tracking-wider uppercase text-indigo-300">
-              {isRecording ? 'Listening & Recording...' : isProcessing ? 'AI Processing Task...' : 'Voice AI Task Creator'}
+              {isRecording ? 'Listening & Measuring Mic...' : isProcessing ? 'AI Transcribing Task...' : 'Voice AI Task Creator'}
             </span>
           </div>
 
@@ -297,16 +366,16 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
           )}
         </div>
 
-        {/* Waveform Animation (When recording) */}
+        {/* Dynamic Mic Gain Visualizer Waveform */}
         {isRecording && (
-          <div className="flex items-center justify-center gap-1.5 h-12 mb-4">
-            <span className="w-1.5 bg-rose-400 rounded-full animate-wave-1" />
-            <span className="w-1.5 bg-rose-500 rounded-full animate-wave-2" />
-            <span className="w-1.5 bg-indigo-400 rounded-full animate-wave-3" />
-            <span className="w-1.5 bg-indigo-500 rounded-full animate-wave-4" />
-            <span className="w-1.5 bg-purple-500 rounded-full animate-wave-5" />
-            <span className="w-1.5 bg-rose-400 rounded-full animate-wave-2" />
-            <span className="w-1.5 bg-indigo-400 rounded-full animate-wave-1" />
+          <div className="flex items-center justify-center gap-1.5 h-10 mb-4">
+            <span className="w-1.5 bg-rose-400 rounded-full transition-all duration-75" style={{ height: `${Math.max(6, (micVolume * 0.7))}%` }} />
+            <span className="w-1.5 bg-rose-500 rounded-full transition-all duration-75" style={{ height: `${Math.max(8, (micVolume * 0.9))}%` }} />
+            <span className="w-1.5 bg-indigo-400 rounded-full transition-all duration-75" style={{ height: `${Math.max(10, micVolume)}%` }} />
+            <span className="w-1.5 bg-indigo-500 rounded-full transition-all duration-75" style={{ height: `${Math.max(12, (micVolume * 1.1))}%` }} />
+            <span className="w-1.5 bg-purple-500 rounded-full transition-all duration-75" style={{ height: `${Math.max(10, micVolume)}%` }} />
+            <span className="w-1.5 bg-rose-400 rounded-full transition-all duration-75" style={{ height: `${Math.max(8, (micVolume * 0.9))}%` }} />
+            <span className="w-1.5 bg-indigo-400 rounded-full transition-all duration-75" style={{ height: `${Math.max(6, (micVolume * 0.7))}%` }} />
           </div>
         )}
 
@@ -356,7 +425,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
             </div>
           ) : isProcessing ? (
             <p className="text-xs font-medium text-indigo-300 animate-pulse">
-              AI transcribing & extracting structured task...
+              AI transcribing & extracting task...
             </p>
           ) : (
             <p className="text-xs font-medium text-slate-300">
