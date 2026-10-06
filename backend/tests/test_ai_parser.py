@@ -17,9 +17,9 @@ class TestAiParser(unittest.TestCase):
         self.assertEqual(polish_task_title("uthana college ke liye"), "Wake up for College")
         self.assertEqual(polish_task_title("college ke liye uthna"), "Wake up for College")
         self.assertEqual(polish_task_title("uthna hai"), "Wake up")
-        self.assertEqual(polish_task_title("database ka assignment submit"), "Submit database assignment")
+        self.assertEqual(polish_task_title("database ka assignment submit"), "Submit Database Assignment")
         self.assertEqual(polish_task_title("rahul ko call"), "Call Rahul")
-        self.assertEqual(polish_task_title("gym jana"), "Gym")
+        self.assertEqual(polish_task_title("gym jana"), "Gym Workout")
 
     def test_heuristic_date_resolution(self):
         # 'kal' should be ref_dt + 1 day
@@ -106,7 +106,7 @@ class TestAiParser(unittest.TestCase):
             self.assertIsInstance(task, ExtractedTask)
             self.assertEqual(task.category, "study")
             self.assertEqual(task.scheduled_time, "10:00")
-            self.assertIn("Submit database assignment", task.title)
+            self.assertIn("Submit Database Assignment", task.title)
         
         asyncio.run(run_test())
 

@@ -11,7 +11,7 @@ class TestUserVoiceExamples(unittest.TestCase):
     def test_database_assignment_hinglish(self):
         # "Kal subah 10 baje database ka assignment submit karna hai."
         res = heuristic_parse_task("Kal subah 10 baje database ka assignment submit karna hai.", self.ref_dt)
-        self.assertEqual(res["title"], "Submit database assignment")
+        self.assertEqual(res["title"], "Submit Database Assignment")
         self.assertEqual(res["scheduled_date"], "2026-10-07")
         self.assertEqual(res["scheduled_time"], "10:00")
         self.assertEqual(res["category"], "study")

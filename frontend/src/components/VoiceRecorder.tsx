@@ -3,7 +3,6 @@ import { Mic, Square, Loader2, Keyboard, Sparkles, AlertCircle, Volume2, Globe }
 import { api } from '../services/api';
 import type { ExtractedTask } from '../types/task';
 
-// Type definitions for browser SpeechRecognition
 interface SpeechRecognitionEvent extends Event {
   results: {
     [index: number]: {
@@ -54,7 +53,10 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
   const speechRecognizerRef = useRef<SpeechRecognitionInstance | null>(null);
   const liveTextBufferRef = useRef<string>('');
 
-  // Supported speech recognition locales
+  // MediaRecorder audio capture refs
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
   const languages = [
     { code: 'en-IN', label: '🇮🇳 Hinglish / English (India)' },
     { code: 'hi-IN', label: '🇮🇳 Hindi (हिंदी)' },
@@ -67,7 +69,6 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
     localStorage.setItem('speech_lang', code);
   };
 
-  // Example voice prompts in various languages
   const samplePrompts = [
     "Kal subah 10 baje database ka assignment submit karna hai",
     "Remind me to call mom tomorrow evening",
@@ -84,56 +85,75 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
     return () => clearInterval(interval);
   }, [samplePrompts.length]);
 
-  const startRecording = () => {
+  const startRecording = async () => {
     setErrorMsg(null);
     setLiveTranscript('');
     liveTextBufferRef.current = '';
+    audioChunksRef.current = [];
 
+    // 1. Try initializing MediaRecorder for direct audio stream capture
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream, {
+          mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : ''
+        });
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+        mediaRecorder.start(250);
+        mediaRecorderRef.current = mediaRecorder;
+      }
+    } catch (err) {
+      console.warn('MediaRecorder audio stream capture unavailable:', err);
+    }
+
+    // 2. Try initializing Web Speech API for live transcription
     const extWin = window as unknown as ExtendedWindow;
     const SpeechRec = extWin.SpeechRecognition || extWin.webkitSpeechRecognition;
 
-    if (!SpeechRec) {
-      setErrorMsg('Voice recognition is not supported in this browser. Please use Chrome/Safari or type your task below.');
+    if (SpeechRec) {
+      try {
+        const recognizer = new SpeechRec();
+        recognizer.continuous = true;
+        recognizer.interimResults = true;
+        recognizer.lang = selectedLang;
+
+        recognizer.onresult = (event: SpeechRecognitionEvent) => {
+          let currentInterim = '';
+          for (let i = 0; i < event.results.length; i++) {
+            currentInterim += event.results[i][0].transcript;
+          }
+          liveTextBufferRef.current = currentInterim;
+          setLiveTranscript(currentInterim);
+        };
+
+        recognizer.onerror = (e) => {
+          console.warn('SpeechRecognition notice:', e);
+        };
+
+        recognizer.start();
+        speechRecognizerRef.current = recognizer;
+      } catch (err) {
+        console.warn('Web Speech API start failed:', err);
+      }
+    }
+
+    // Check if at least one recording method was launched
+    if (!mediaRecorderRef.current && !speechRecognizerRef.current) {
+      setErrorMsg('Microphone access unavailable or blocked. Please type your task below.');
       setShowTextInput(true);
       return;
     }
 
-    try {
-      const recognizer = new SpeechRec();
-      recognizer.continuous = true;
-      recognizer.interimResults = true;
-      recognizer.lang = selectedLang;
+    setIsRecording(true);
+    setRecordingSeconds(0);
 
-      recognizer.onresult = (event: SpeechRecognitionEvent) => {
-        let currentInterim = '';
-        for (let i = 0; i < event.results.length; i++) {
-          currentInterim += event.results[i][0].transcript;
-        }
-        liveTextBufferRef.current = currentInterim;
-        setLiveTranscript(currentInterim);
-      };
-
-      recognizer.onerror = (e) => {
-        console.warn('SpeechRecognition notice:', e);
-      };
-
-      recognizer.onend = () => {
-        // Recognition completed
-      };
-
-      recognizer.start();
-      speechRecognizerRef.current = recognizer;
-      setIsRecording(true);
-      setRecordingSeconds(0);
-
-      timerRef.current = window.setInterval(() => {
-        setRecordingSeconds((prev) => prev + 1);
-      }, 1000);
-    } catch (err) {
-      console.error('Microphone/speech error:', err);
-      setErrorMsg('Could not access microphone. Please check browser microphone permissions.');
-      setIsRecording(false);
-    }
+    timerRef.current = window.setInterval(() => {
+      setRecordingSeconds((prev) => prev + 1);
+    }, 1000);
   };
 
   const stopRecording = async () => {
@@ -142,6 +162,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
       timerRef.current = null;
     }
 
+    // Stop Speech Recognition
     if (speechRecognizerRef.current) {
       try {
         speechRecognizerRef.current.stop();
@@ -150,13 +171,51 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
       }
     }
 
+    // Stop MediaRecorder and collect stream
+    let recordedBlob: Blob | null = null;
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        const mediaRecorder = mediaRecorderRef.current;
+        await new Promise<void>((resolve) => {
+          mediaRecorder.onstop = () => resolve();
+          mediaRecorder.stop();
+        });
+        if (audioChunksRef.current.length > 0) {
+          recordedBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || 'audio/webm' });
+        }
+        // Stop audio tracks
+        mediaRecorder.stream.getTracks().forEach((track) => track.stop());
+      } catch (e) {
+        console.warn('Error stopping MediaRecorder:', e);
+      }
+    }
+
     setIsRecording(false);
+    setIsProcessing(true);
+    setErrorMsg(null);
 
     const spokenText = (liveTextBufferRef.current || liveTranscript).trim();
-    if (spokenText.length >= 2) {
-      await processDirectText(spokenText);
-    } else {
-      setErrorMsg('No speech detected. Please speak clearly into your microphone.');
+
+    try {
+      // Option A: If live speech recognition produced text, process text directly
+      if (spokenText.length >= 2) {
+        const task = await api.processVoiceText(spokenText);
+        onTaskExtracted(task);
+      }
+      // Option B: If live speech text is empty/short but audio blob exists, upload audio to backend Whisper / Gemini
+      else if (recordedBlob && recordedBlob.size > 500) {
+        setLiveTranscript('Transcribing audio recording...');
+        const task = await api.processVoiceAudio(recordedBlob, selectedLang);
+        onTaskExtracted(task);
+      } else {
+        setErrorMsg('No speech detected. Please speak clearly into your microphone or type below.');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to parse task';
+      setErrorMsg(msg);
+      setShowTextInput(true);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -202,7 +261,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
           <div className="flex items-center space-x-1.5">
             <Sparkles className="w-4 h-4 text-indigo-400" />
             <span className="text-xs font-semibold tracking-wider uppercase text-indigo-300">
-              {isRecording ? 'Listening in real-time...' : isProcessing ? 'AI Extracting Task...' : 'Voice AI Task Creator'}
+              {isRecording ? 'Listening & Recording...' : isProcessing ? 'AI Processing Task...' : 'Voice AI Task Creator'}
             </span>
           </div>
 
@@ -297,7 +356,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
             </div>
           ) : isProcessing ? (
             <p className="text-xs font-medium text-indigo-300 animate-pulse">
-              AI translating & extracting structured task...
+              AI transcribing & extracting structured task...
             </p>
           ) : (
             <p className="text-xs font-medium text-slate-300">
@@ -320,7 +379,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
                 onClick={onOpenSettings}
                 className="mt-1 text-[11px] text-indigo-400 hover:underline font-semibold"
               >
-                Configure Settings →
+                Configure AI Keys in Settings →
               </button>
             )}
           </div>

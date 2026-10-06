@@ -39,63 +39,96 @@ const WORD_TO_NUMBER: Record<string, number> = {
   barah: 12, bara: 12, baarah: 12, twelve: 12, बारह: 12, ਬਾਰਾਂ: 12,
 };
 
+function toTitleCase(phrase: string): string {
+  if (!phrase) return phrase;
+  const smallWords = new Set(['a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'if', 'in', 'of', 'on', 'or', 'the', 'to', 'via', 'with', 'ka', 'ki', 'ke', 'da', 'di', 'de']);
+  const words = phrase.trim().split(/\s+/);
+  return words
+    .map((w, i) => {
+      const lw = w.toLowerCase();
+      if (['dbms', 'sql', 'ui', 'ux', 'api', 'ai', 'pdf', 'hr', 'it'].includes(lw)) {
+        return lw.toUpperCase();
+      }
+      if (i === 0 || !smallWords.has(lw)) {
+        return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+      }
+      return lw;
+    })
+    .join(' ');
+}
+
 function polishTaskTitle(title: string): string {
   const cleaned = title.trim();
+  if (!cleaned) return '';
+
   // 1. Study patterns
   const mStudy1 = cleaned.match(/^(.*?)\s+(?:padhna|padhni|padhai|padh|study|read|learn|ਪੜ੍ਹਨਾ|ਪੜ੍ਹਾਈ|पढ़ना|पढना)(?:\s+hai)?$/i);
   if (mStudy1) {
     const subj = mStudy1[1].trim();
-    const subjStr = subj.length <= 4 ? subj.toUpperCase() : subj.charAt(0).toUpperCase() + subj.slice(1);
+    const subjStr = subj.length <= 4 ? subj.toUpperCase() : toTitleCase(subj);
     return `Study ${subjStr}`;
   }
   const mStudy2 = cleaned.match(/^(?:padhna|padhni|padhai|padh|study|read|learn|ਪੜ੍ਹਨਾ|ਪੜ੍ਹਾਈ|पढ़ना|पढना)\s+(.*?)(?:\s+hai)?$/i);
   if (mStudy2) {
     const subj = mStudy2[1].trim();
-    const subjStr = subj.length <= 4 ? subj.toUpperCase() : subj.charAt(0).toUpperCase() + subj.slice(1);
+    const subjStr = subj.length <= 4 ? subj.toUpperCase() : toTitleCase(subj);
     return `Study ${subjStr}`;
   }
 
-  // 2. Wake up patterns
-  const mWake = cleaned.match(/^(?:uthana|uthna|jagna|utho|wake\s*up|get\s*up|ਉੱਠਣਾ|ਉਠਣਾ|उठना|जागना)\s+(?:hai\s+)?(.+?)\s+(?:ke\s+liye|lai|waste|nu|ko)$/i);
-  if (mWake) {
-    const target = mWake[1].trim();
-    return `Wake up for ${target.charAt(0).toUpperCase() + target.slice(1)}`;
-  }
-  if (/^(?:uthana|uthna|jagna|utho|wake\s*up|get\s*up|ਉੱਠਣਾ|ਉਠਣਾ|उठना|जागना)(?:\s+hai)?$/i.test(cleaned)) {
-    return 'Wake up';
+  // 2. Doctor patterns
+  if (/\b(doctor|dr\.|dentist|clinic)\b/i.test(cleaned)) {
+    const docName = cleaned.replace(/\s*(?:ke\s+paas|jana|jani|jaana|hai|appointment|visit)\s*/gi, ' ').trim();
+    return docName ? `Visit ${toTitleCase(docName)}` : 'Visit Doctor';
   }
 
-  // 3. Call patterns
+  // 3. Wake up patterns
+  const mWake = cleaned.match(/^(?:uthana|uthna|jagna|utho|wake\s*up|get\s*up|ਉੱਠਣਾ|ਉਠਣਾ|उठना|जागना)\s+(?:hai\s+)?(.+?)\s+(?:ke\s+liye|lai|waste|nu|ko)$/i);
+  if (mWake) {
+    return `Wake up for ${toTitleCase(mWake[1].trim())}`;
+  }
+  if (/^(?:uthana|uthna|jagna|utho|wake\s*up|get\s*up|ਉੱਠਣਾ|ਉਠਣਾ|उठना|जागना)(?:\s+hai)?$/i.test(cleaned)) {
+    return 'Wake Up';
+  }
+
+  // 4. Call patterns
   const mCall1 = cleaned.match(/^(.*?)\s+(?:ko|nu)\s+(?:call|phone|milna)(?:\s+karna)?$/i);
   if (mCall1) {
-    return `Call ${mCall1[1].trim().replace(/\b\w/g, (l) => l.toUpperCase())}`;
+    return `Call ${toTitleCase(mCall1[1].trim())}`;
   }
   const mCall2 = cleaned.match(/^(?:call|phone)\s+(?:to\s+)?(.*?)(?:\s+ko|\s+nu)?$/i);
   if (mCall2) {
-    return `Call ${mCall2[1].trim().replace(/\b\w/g, (l) => l.toUpperCase())}`;
+    return `Call ${toTitleCase(mCall2[1].trim())}`;
   }
 
-  // 4. Action patterns
+  // 5. Action patterns
   const mSubmit = cleaned.match(/^(.*?)\s+(?:ka|ki|ke|da|di|de)\s+(.*?)\s+(submit|complete|finish|karna|check|review|dena)$/i);
   if (mSubmit) {
     const verbMap: Record<string, string> = { submit: 'Submit', complete: 'Complete', finish: 'Finish', karna: 'Do', check: 'Check', review: 'Review', dena: 'Submit' };
     const v = verbMap[mSubmit[3].toLowerCase()] || mSubmit[3];
-    return `${v} ${mSubmit[1]} ${mSubmit[2]}`.trim();
+    return toTitleCase(`${v} ${mSubmit[1]} ${mSubmit[2]}`);
   }
   const mAction = cleaned.match(/^(.*?)\s+(submit|complete|finish|check|review|pay|bharna)$/i);
   if (mAction) {
     const verbMap: Record<string, string> = { submit: 'Submit', complete: 'Complete', finish: 'Finish', check: 'Check', review: 'Review', pay: 'Pay', bharna: 'Pay' };
     const v = verbMap[mAction[2].toLowerCase()] || mAction[2];
-    return `${v} ${mAction[1]}`.trim();
+    return toTitleCase(`${v} ${mAction[1]}`);
   }
 
-  // 5. Gym / exercise
-  const mGym = cleaned.match(/^(gym|walk|workout)\s+(?:jana|jani|jaana|जाना|ਜਾਣਾ)$/i);
+  // 6. Gym / exercise
+  const mGym = cleaned.match(/^(gym|walk|workout)\s+(?:jana|jani|jaana|जाना|ਜਾਣਾ)?$/i);
   if (mGym) {
-    return mGym[1].charAt(0).toUpperCase() + mGym[1].slice(1);
+    const word = mGym[1].toLowerCase();
+    if (word === 'gym') return 'Gym Workout';
+    return toTitleCase(word);
   }
 
-  return cleaned;
+  // 7. Pay bill
+  const mPay = cleaned.match(/^(?:pay|bharna)\s+(.*?)$/i);
+  if (mPay) {
+    return `Pay ${toTitleCase(mPay[1].trim())}`;
+  }
+
+  return toTitleCase(cleaned);
 }
 
 export function heuristicParseTask(transcript: string): ExtractedTask {
@@ -186,7 +219,7 @@ export function heuristicParseTask(transcript: string): ExtractedTask {
     'remind me to', 'remind me', 'tomorrow at', 'tomorrow evening', 'tomorrow morning', 'tomorrow night', 'tomorrow',
     'today at', 'today evening', 'today morning', 'today night', 'today', 'kal shaam', 'kal subah', 'kal raat', 'kal dopahar', 'kal',
     'aaj shaam', 'aaj subah', 'aaj raat', 'aaj', 'parson', 'karna hai', 'karni hai', 'jana hai', 'jani hai', 'dena hai', 'deni hai',
-    'karna', 'jana', 'hai', 'baje', 'कल सुबह', 'कल शाम', 'कल रात', 'कल', 'आज सुबह', 'आज शाम', 'आज', 'परसों', 'ਕੱਲ੍ਹ ਸ਼ਾਮ', 'ਕੱਲ੍ਹ ਸਵੇਰੇ', 'ਕੱਲ੍ਹ',
+    'karna', 'jana', 'hai', 'baje', 'कल सुबह', 'कल शाम', 'कल रात', 'कल', 'आज सुबह', 'आज शाम', 'आज', 'परसों', '<ctrl42>ਕੱਲ੍ਹ ਸ਼ਾਮ', 'ਕੱਲ੍ਹ ਸਵੇਰੇ', 'ਕੱਲ੍ਹ',
   ];
   stripPhrases.forEach((p) => {
     cleanTitle = cleanTitle.replace(new RegExp(`\\b${p.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'gi'), '');
@@ -200,7 +233,7 @@ export function heuristicParseTask(transcript: string): ExtractedTask {
   if (!cleanTitle || cleanTitle.length < 2) {
     cleanTitle = transcript.trim();
   } else {
-    cleanTitle = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
+    cleanTitle = toTitleCase(cleanTitle);
   }
 
   let detectedLang = 'en';
@@ -249,13 +282,13 @@ export const api = {
 
     // 2. Try client-side Gemini if API key in localStorage
     const geminiKey = localStorage.getItem('gemini_api_key');
-    if (geminiKey && geminiKey.length > 10) {
+    if (geminiKey && geminiKey.length > 15 && !geminiKey.startsWith('AIzaSyDXYy')) {
       try {
         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: `User text: "${text}". Extract JSON task with fields: title, description, scheduled_date (YYYY-MM-DD), scheduled_time (HH:MM), priority (low/medium/high), category (work/study/personal/health/finance/general), reminder_required (boolean), language.` }] }],
+            contents: [{ parts: [{ text: `User text: "${text}". Extract JSON task with fields: title (Title Cased short action phrase without date/time), description, scheduled_date (YYYY-MM-DD), scheduled_time (HH:MM), priority (low/medium/high), category (work/study/personal/health/finance/general), reminder_required (boolean), language.` }] }],
             generationConfig: { response_mime_type: 'application/json', temperature: 0 }
           })
         });
@@ -274,7 +307,7 @@ export const api = {
 
     // 3. Try client-side Groq if API key in localStorage
     const groqKey = localStorage.getItem('groq_api_key');
-    if (groqKey && groqKey.length > 10) {
+    if (groqKey && groqKey.length > 15) {
       try {
         const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
@@ -286,7 +319,7 @@ export const api = {
             model: 'llama-3.3-70b-versatile',
             response_format: { type: 'json_object' },
             messages: [
-              { role: 'system', content: 'Extract JSON task with fields: title, description, scheduled_date (YYYY-MM-DD), scheduled_time (HH:MM), priority (low/medium/high), category (work/study/personal/health/finance/general), reminder_required (boolean), language.' },
+              { role: 'system', content: 'Extract JSON task with fields: title (Title Cased short action phrase without date/time), description, scheduled_date (YYYY-MM-DD), scheduled_time (HH:MM), priority (low/medium/high), category (work/study/personal/health/finance/general), reminder_required (boolean), language.' },
               { role: 'user', content: text }
             ]
           })
@@ -306,6 +339,31 @@ export const api = {
 
     // 4. Fallback to client-side heuristic parser
     return heuristicParseTask(text);
+  },
+
+  /**
+   * Uploads raw recorded audio blob for backend Whisper/Gemini transcription & task extraction.
+   */
+  async processVoiceAudio(audioBlob: Blob, language?: string): Promise<ExtractedTask> {
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'voice_recording.webm');
+    formData.append('user_timezone', getUserTimezone());
+    if (language) {
+      formData.append('language', language);
+    }
+
+    const response = await fetch(`${API_BASE}/voice/process-audio`, {
+      method: 'POST',
+      headers: getCustomKeyHeaders(), // Don't set Content-Type header, browser sets multipart boundary
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({ detail: 'Failed to transcribe audio' }));
+      throw new Error(errData.detail || `Audio processing failed (${response.status})`);
+    }
+
+    return await response.json();
   },
 
   /**
