@@ -158,14 +158,14 @@ npm run build
    * `DEFAULT_TIMEZONE` = `Asia/Kolkata`
 5. Render will provide a live HTTPS URL (e.g., `https://voicetasks-api.onrender.com`).
 
-### Deploying the Frontend (Vercel)
-1. Go to [vercel.com](https://vercel.com) and click **Add New Project**.
-2. Select your repository and set:
-   * **Root Directory:** `frontend`
-   * **Framework Preset:** `Vite`
-3. In **Environment Variables**, set:
-   * `VITE_API_URL` = `https://voicetasks-api.onrender.com`
-4. Click **Deploy**. Vercel will automatically provision HTTPS SSL (required for PWA installation and microphone permissions).
+### Deploying the Frontend (Netlify)
+The repository's `netlify.toml` configures the `frontend` build, publishes `dist`, proxies `/api/*` to the Render backend, and routes app paths to the SPA entry point.
+
+1. Import the repository in [Netlify](https://www.netlify.com/).
+2. Keep the build settings from `netlify.toml` (base directory `frontend`, build command `npm run build`, publish directory `dist`).
+3. Deploy. No `VITE_API_URL` variable is needed when using the configured API proxy.
+
+Netlify provides HTTPS, which is required for PWA installation and microphone permissions. If the backend URL changes, update the `/api/*` redirect in `netlify.toml` and redeploy.
 
 ---
 

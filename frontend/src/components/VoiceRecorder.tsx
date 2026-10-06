@@ -190,9 +190,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
   };
 
   return (
-    <div className="w-full max-w-md mx-auto my-6 px-4">
+    <div className="w-full max-w-md mx-auto">
       {/* Voice Card Container */}
-      <div className="relative rounded-3xl bg-gradient-to-b from-slate-900/90 to-slate-950/90 border border-slate-800/80 p-6 sm:p-8 text-center shadow-2xl backdrop-blur-xl">
+      <div className="relative rounded-3xl bg-gradient-to-b from-slate-900/95 to-slate-950/95 border border-slate-800/80 p-6 sm:p-8 text-center shadow-2xl backdrop-blur-xl">
         
         {/* Ambient Glow */}
         <div className={`absolute -inset-0.5 rounded-3xl bg-gradient-to-r ${isRecording ? 'from-rose-500 to-indigo-500 opacity-40 blur-xl' : 'from-indigo-500/20 to-purple-500/20 opacity-30 blur-lg'} -z-10 transition-all duration-500`} />
@@ -256,8 +256,8 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
           {/* Ripple rings */}
           {isRecording && (
             <>
-              <div className="absolute w-24 h-24 rounded-full bg-rose-500/30 animate-ping" />
-              <div className="absolute w-28 h-28 rounded-full bg-indigo-500/20 animate-pulse" />
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-rose-500/30 animate-ping pointer-events-none" />
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 sm:w-36 sm:h-36 rounded-full bg-indigo-500/20 animate-pulse pointer-events-none" />
             </>
           )}
 
@@ -320,7 +320,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
                 onClick={onOpenSettings}
                 className="mt-1 text-[11px] text-indigo-400 hover:underline font-semibold"
               >
-                Configure Settings $\rightarrow$
+                Configure Settings →
               </button>
             )}
           </div>
