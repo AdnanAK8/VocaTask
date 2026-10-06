@@ -156,7 +156,7 @@ export function heuristicParseTask(transcript: string): ExtractedTask {
   // 2. Time resolution
   let scheduledTime: string | null = null;
   const isPm = ['shaam', 'sham', 'raat', 'evening', 'night', 'pm', 'p.m.', 'शाम', 'रात', 'ਸ਼ਾਮ', 'ਰਾਤ'].some((k) => textLower.includes(k));
-  const isAm = ['subah', 'subh', 'morning', 'am', 'a.m.', 'सुबह', 'सवेरे', 'ਸਵੇਰੇ', 'ਸਵੇਰ'].some((k) => textLower.includes(k));
+  const isAm = ['subah', 'subh', 'morning', 'am', 'a.m.', 'सुबह', 'सवेरे', '<ctrl42>ਸਵੇਰੇ', 'ਸਵੇਰ'].some((k) => textLower.includes(k));
   const isAfternoon = ['dopahar', 'afternoon', 'ਦੁਪਹਿਰ', 'दोपहर'].some((k) => textLower.includes(k));
 
   let parsedHour: number | null = null;
@@ -219,7 +219,7 @@ export function heuristicParseTask(transcript: string): ExtractedTask {
     'remind me to', 'remind me', 'tomorrow at', 'tomorrow evening', 'tomorrow morning', 'tomorrow night', 'tomorrow',
     'today at', 'today evening', 'today morning', 'today night', 'today', 'kal shaam', 'kal subah', 'kal raat', 'kal dopahar', 'kal',
     'aaj shaam', 'aaj subah', 'aaj raat', 'aaj', 'parson', 'karna hai', 'karni hai', 'jana hai', 'jani hai', 'dena hai', 'deni hai',
-    'karna', 'jana', 'hai', 'baje', 'कल सुबह', 'कल शाम', 'कल रात', 'कल', 'आज सुबह', 'आज शाम', 'आज', 'परसों', '<ctrl42>ਕੱਲ੍ਹ ਸ਼ਾਮ', 'ਕੱਲ੍ਹ ਸਵੇਰੇ', 'ਕੱਲ੍ਹ',
+    'karna', 'jana', 'hai', 'baje', 'कल सुबह', 'कल शाम', 'कल रात', 'कल', 'आज सुबह', 'आज शाम', 'आज', 'परसों', 'ਕੱਲ੍ਹ ਸ਼ਾਮ', 'ਕੱਲ੍ਹ ਸਵੇਰੇ', 'ਕੱਲ੍ਹ',
   ];
   stripPhrases.forEach((p) => {
     cleanTitle = cleanTitle.replace(new RegExp(`\\b${p.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'gi'), '');
@@ -273,7 +273,8 @@ export const api = {
         }),
       });
 
-      if (response.ok) {
+      const contentType = response.headers.get('content-type') || '';
+      if (response.ok && contentType.includes('application/json')) {
         return await response.json();
       }
     } catch (e) {
@@ -342,28 +343,129 @@ export const api = {
   },
 
   /**
-   * Uploads raw recorded audio blob for backend Whisper/Gemini transcription & task extraction.
+   * Uploads raw recorded audio blob for backend Whisper/Gemini transcription & task extraction
+   * with full client-side Groq/OpenAI/Gemini fallback when deployed statically on Netlify!
    */
   async processVoiceAudio(audioBlob: Blob, language?: string): Promise<ExtractedTask> {
-    const formData = new FormData();
-    formData.append('file', audioBlob, 'voice_recording.webm');
-    formData.append('user_timezone', getUserTimezone());
-    if (language) {
-      formData.append('language', language);
+    // 1. Try backend server if reachable
+    try {
+      const formData = new FormData();
+      formData.append('file', audioBlob, 'voice_recording.webm');
+      formData.append('user_timezone', getUserTimezone());
+      if (language) {
+        formData.append('language', language);
+      }
+
+      const response = await fetch(`${API_BASE}/voice/process-audio`, {
+        method: 'POST',
+        headers: getCustomKeyHeaders(),
+        body: formData,
+      });
+
+      const contentType = response.headers.get('content-type') || '';
+      if (response.ok && contentType.includes('application/json')) {
+        return await response.json();
+      }
+    } catch (e) {
+      console.warn('Backend API unreachable for audio transcription, trying client-side APIs:', e);
     }
 
-    const response = await fetch(`${API_BASE}/voice/process-audio`, {
-      method: 'POST',
-      headers: getCustomKeyHeaders(), // Don't set Content-Type header, browser sets multipart boundary
-      body: formData,
-    });
+    // 2. Try client-side Groq Whisper API if key is saved in localStorage
+    const groqKey = localStorage.getItem('groq_api_key');
+    if (groqKey && groqKey.length > 15) {
+      try {
+        const formData = new FormData();
+        formData.append('file', audioBlob, 'recording.webm');
+        formData.append('model', 'whisper-large-v3-turbo');
+        formData.append('response_format', 'json');
+        if (language && language !== 'auto' && language !== 'hinglish') {
+          formData.append('language', language.split('-')[0]);
+        }
 
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({ detail: 'Failed to transcribe audio' }));
-      throw new Error(errData.detail || `Audio processing failed (${response.status})`);
+        const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${groqKey}` },
+          body: formData,
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.text) {
+            return await this.processVoiceText(data.text);
+          }
+        }
+      } catch (err) {
+        console.warn('Client-side Groq Whisper API failed:', err);
+      }
     }
 
-    return await response.json();
+    // 3. Try client-side OpenAI Whisper API if key is saved in localStorage
+    const openaiKey = localStorage.getItem('openai_api_key');
+    if (openaiKey && openaiKey.length > 15) {
+      try {
+        const formData = new FormData();
+        formData.append('file', audioBlob, 'recording.webm');
+        formData.append('model', 'whisper-1');
+
+        const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${openaiKey}` },
+          body: formData,
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.text) {
+            return await this.processVoiceText(data.text);
+          }
+        }
+      } catch (err) {
+        console.warn('Client-side OpenAI Whisper API failed:', err);
+      }
+    }
+
+    // 4. Try client-side Gemini Multimodal Audio API if key is saved in localStorage
+    const geminiKey = localStorage.getItem('gemini_api_key');
+    if (geminiKey && geminiKey.length > 15 && !geminiKey.startsWith('AIzaSyDXYy')) {
+      try {
+        const base64Audio = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const resStr = reader.result as string;
+            resolve(resStr.split(',')[1] || '');
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(audioBlob);
+        });
+
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { inline_data: { mime_type: audioBlob.type || 'audio/webm', data: base64Audio } },
+                { text: 'Transcribe this audio recording accurately word for word.' }
+              ]
+            }]
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const transcriptText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (transcriptText) {
+            return await this.processVoiceText(transcriptText);
+          }
+        }
+      } catch (err) {
+        console.warn('Client-side Gemini audio transcription failed:', err);
+      }
+    }
+
+    throw new Error(
+      'Backend AI server is offline on Netlify. Please configure your Groq or Gemini API key in Settings (or type your task) to enable voice AI!'
+    );
   },
 
   /**
@@ -372,7 +474,8 @@ export const api = {
   async getTasks(): Promise<Task[]> {
     try {
       const res = await fetch(`${API_BASE}/tasks`);
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
         const data: Task[] = await res.json();
         localStorage.setItem('voicetasks_cache', JSON.stringify(data));
         return data;
@@ -396,7 +499,8 @@ export const api = {
         body: JSON.stringify(taskData),
       });
 
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
         const created: Task = await res.json();
         const cached = localStorage.getItem('voicetasks_cache');
         const list: Task[] = cached ? JSON.parse(cached) : [];
@@ -427,7 +531,8 @@ export const api = {
         body: JSON.stringify(updates),
       });
 
-      if (response.ok) {
+      const contentType = response.headers.get('content-type') || '';
+      if (response.ok && contentType.includes('application/json')) {
         const updated: Task = await response.json();
         const cached = localStorage.getItem('voicetasks_cache');
         if (cached) {
@@ -465,7 +570,8 @@ export const api = {
       const res = await fetch(`${API_BASE}/tasks/${id}/toggle`, {
         method: 'PATCH',
       });
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
         return res.json();
       }
     } catch (e) {
