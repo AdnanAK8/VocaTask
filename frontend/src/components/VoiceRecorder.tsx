@@ -23,8 +23,12 @@ interface SpeechRecognitionInstance extends EventTarget {
   stop: () => void;
   abort: () => void;
   onresult: (event: SpeechRecognitionEvent) => void;
-  onerror: (event: Event) => void;
+  onerror: (event: SpeechRecognitionErrorEvent) => void;
   onend: () => void;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
 }
 
 interface ExtendedWindow extends Window {
@@ -52,6 +56,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
 
   const timerRef = useRef<number | null>(null);
   const speechRecognizerRef = useRef<SpeechRecognitionInstance | null>(null);
+  const speechRecognitionEndedRef = useRef<Promise<void> | null>(null);
+  const resolveSpeechRecognitionEndedRef = useRef<(() => void) | null>(null);
+  const speechRecognitionErrorRef = useRef<string | null>(null);
   const liveTextBufferRef = useRef<string>('');
 
   // MediaRecorder audio capture & AudioContext refs
@@ -114,6 +121,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
     setLiveTranscript('');
     liveTextBufferRef.current = '';
     audioChunksRef.current = [];
+    mediaRecorderRef.current = null;
+    speechRecognizerRef.current = null;
+    speechRecognitionEndedRef.current = null;
+    resolveSpeechRecognitionEndedRef.current = null;
+    speechRecognitionErrorRef.current = null;
     maxVolumeRef.current = 0;
     setMicVolume(0);
 
@@ -173,7 +185,13 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
       }
     } catch (err) {
       console.warn('Microphone stream error:', err);
-      setErrorMsg('Could not access microphone. Please check browser microphone permissions or unmute your mic.');
+      const errorName = err instanceof Error ? err.name : '';
+      const message = errorName === 'NotAllowedError' || errorName === 'SecurityError'
+        ? 'Microphone access was denied. Allow microphone access for this site in your browser settings, then try again.'
+        : errorName === 'NotFoundError'
+          ? 'No microphone was found. Connect or enable a microphone, or type your task instead.'
+          : 'Could not access the microphone. Check that it is connected, unmuted, and not being used by another app.';
+      setErrorMsg(message);
       setShowTextInput(true);
       return;
     }
@@ -188,6 +206,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
         recognizer.continuous = true;
         recognizer.interimResults = true;
         recognizer.lang = selectedLang;
+        speechRecognitionEndedRef.current = new Promise<void>((resolve) => {
+          resolveSpeechRecognitionEndedRef.current = resolve;
+        });
 
         recognizer.onresult = (event: SpeechRecognitionEvent) => {
           let fullTranscript = '';
@@ -201,19 +222,26 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
           }
         };
 
-        recognizer.onerror = (e) => {
-          console.warn('SpeechRecognition notice:', e);
+        recognizer.onerror = (event) => {
+          speechRecognitionErrorRef.current = event.error;
+          console.warn('SpeechRecognition notice:', event.error);
+        };
+
+        recognizer.onend = () => {
+          resolveSpeechRecognitionEndedRef.current?.();
         };
 
         recognizer.start();
         speechRecognizerRef.current = recognizer;
       } catch (err) {
+        speechRecognitionEndedRef.current = null;
+        resolveSpeechRecognitionEndedRef.current = null;
         console.warn('Web Speech API start error:', err);
       }
     }
 
     if (!mediaRecorderRef.current && !speechRecognizerRef.current) {
-      setErrorMsg('Voice recognition unavailable on this browser. Please type your task below.');
+      setErrorMsg('Voice recording is not supported in this browser. Try Chrome or Edge on a secure connection, or type your task.');
       setShowTextInput(true);
       return;
     }
@@ -227,6 +255,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
   };
 
   const stopRecording = async () => {
+    const speechRecognitionEnded = speechRecognitionEndedRef.current;
     // 1. Stop Speech Recognition
     if (speechRecognizerRef.current) {
       try {
@@ -253,12 +282,24 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
       }
     }
 
+    if (speechRecognitionEnded) {
+      let timeoutId: number | undefined;
+      await Promise.race([
+        speechRecognitionEnded,
+        new Promise<void>((resolve) => {
+          timeoutId = window.setTimeout(resolve, 2000);
+        }),
+      ]);
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    }
+
     cleanupAudioResources();
     setIsRecording(false);
     setIsProcessing(true);
     setErrorMsg(null);
 
     const spokenText = (liveTextBufferRef.current || liveTranscript).trim();
+    const recognitionError = speechRecognitionErrorRef.current;
 
     try {
       // Option A: If live Speech Recognition picked up text, process text directly
@@ -274,8 +315,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
       } else {
         if (maxVolumeRef.current < 5) {
           setErrorMsg('No sound detected from microphone. Please check your mic volume or type your task prompt below.');
+        } else if (recognitionError === 'not-allowed' || recognitionError === 'service-not-allowed') {
+          setErrorMsg('Browser speech recognition was blocked. Check browser permissions and network access, or type your task.');
+        } else if (recognitionError === 'network') {
+          setErrorMsg('Browser speech recognition could not reach its recognition service. Check your internet connection or type your task.');
         } else {
-          setErrorMsg('No clear speech detected. Please speak into your mic or type below.');
+          setErrorMsg('No clear speech was recognized. Speak closer to the microphone, check the selected language, or type your task.');
         }
         setShowTextInput(true);
       }
@@ -288,15 +333,17 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
     }
   };
 
-  const processDirectText = async (text: string) => {
+  const processDirectText = async (text: string): Promise<boolean> => {
     setIsProcessing(true);
     setErrorMsg(null);
     try {
       const task = await api.processVoiceText(text);
       onTaskExtracted(task);
+      return true;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to parse task';
       setErrorMsg(msg);
+      return false;
     } finally {
       setIsProcessing(false);
     }
@@ -306,9 +353,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
     e.preventDefault();
     if (!typedText.trim() || isProcessing) return;
 
-    await processDirectText(typedText);
-    setTypedText('');
-    setShowTextInput(false);
+    const succeeded = await processDirectText(typedText);
+    if (succeeded) {
+      setTypedText('');
+      setShowTextInput(false);
+    }
   };
 
   const formatSeconds = (sec: number) => {
@@ -442,7 +491,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
               <span>Voice Notice</span>
             </div>
             <p className="text-[11px] text-slate-300">{errorMsg}</p>
-            {onOpenSettings && (
+            {onOpenSettings && /api key/i.test(errorMsg) && (
               <button
                 type="button"
                 onClick={onOpenSettings}

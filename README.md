@@ -153,19 +153,28 @@ npm run build
    * **Build Command:** `pip install -r requirements.txt`
    * **Start Command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 4. In **Environment Variables**, add:
-   * `GROQ_API_KEY` = your Groq API key
-   * `OPENAI_API_KEY` = your OpenAI key (optional)
-   * `DEFAULT_TIMEZONE` = `Asia/Kolkata`
-5. Render will provide a live HTTPS URL (e.g., `https://voicetasks-api.onrender.com`).
+  * At least one of `GROQ_API_KEY`, `OPENAI_API_KEY`, or `GEMINI_API_KEY` for server-side audio transcription.
+  * `DEFAULT_TIMEZONE` = `Asia/Kolkata`
+  * `CORS_ORIGINS` = `["https://your-frontend-domain.cloudfront.net"]` (JSON array; include your local origins too if needed)
+5. Your backend host will provide a live HTTPS URL (e.g., `https://api.yourdomain.com`).
 
-### Deploying the Frontend (Netlify)
-The repository's `netlify.toml` configures the `frontend` build, publishes `dist`, proxies `/api/*` to the Render backend, and routes app paths to the SPA entry point.
+### Deploying the Frontend (AWS S3 + CloudFront or AWS Amplify)
+The frontend is a Vite + React SPA that compiles to static files in `frontend/dist`.
 
-1. Import the repository in [Netlify](https://www.netlify.com/).
-2. Keep the build settings from `netlify.toml` (base directory `frontend`, build command `npm run build`, publish directory `dist`).
-3. Deploy. No `VITE_API_URL` variable is needed when using the configured API proxy.
-
-Netlify provides HTTPS, which is required for PWA installation and microphone permissions. If the backend URL changes, update the `/api/*` redirect in `netlify.toml` and redeploy.
+1. **Build the frontend**:
+   * Set `VITE_API_URL` to your backend HTTPS URL (e.g. `https://api.yourdomain.com` without trailing slash).
+   * Run `npm run build` in the `frontend` folder to generate the production build in `frontend/dist`.
+2. **Deploy to AWS**:
+   * **Option A (AWS S3 + CloudFront)**:
+     - Upload `frontend/dist/*` to an S3 bucket configured for static hosting or private bucket with CloudFront Origin Access Control (OAC).
+     - Configure CloudFront distribution pointing to the S3 bucket.
+     - Add a custom error response in CloudFront: HTTP Error Code `404` (and `403`), Response Page Path `/index.html`, HTTP Response Code `200` (for React SPA routing).
+   * **Option B (AWS Amplify)**:
+     - Connect your Git repository, set base directory to `frontend`, build command to `npm run build`, and output directory to `dist`.
+     - In Amplify build settings / environment variables, configure `VITE_API_URL`.
+     - Ensure Single Page App (SPA) redirect rule `</^[^.]+$|\.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|woff2|ttf|map|json)$)([^.]+$)/>` rewrites to `/index.html` with status `200`.
+3. Add your deployed AWS frontend domain to the backend's `CORS_ORIGINS` JSON array.
+4. HTTPS is required by browsers for microphone permissions. Server API keys belong only in the backend host's environment variables; user-supplied keys saved in app Settings remain browser-side and are sent only as request headers.
 
 ---
 

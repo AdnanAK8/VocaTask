@@ -15,13 +15,12 @@ class Settings(BaseSettings):
     # Default Timezone for resolving relative words (e.g. "kal", "tomorrow")
     DEFAULT_TIMEZONE: str = "Asia/Kolkata"
     
-    # Allowed CORS Origins
+    # Allowed CORS Origins (set via CORS_ORIGINS environment variable for production AWS/CloudFront origins)
     CORS_ORIGINS: List[str] = [
         "http://localhost:5173",
         "http://localhost:3000",
         "http://127.0.0.1:5173",
-        "http://127.0.0.1:3000",
-        "*"
+        "http://127.0.0.1:3000"
     ]
     
     # SQLite Database for lightweight local persistent storage

@@ -1,6 +1,21 @@
 import type { CategoryType, ExtractedTask, PriorityType, Task, TaskCreateInput, TaskUpdateInput } from '../types/task';
 
-const API_BASE = (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '') + '/api';
+const configuredApiUrl = import.meta.env.VITE_API_URL?.trim().replace(/\/+$/, '');
+const API_BASE = configuredApiUrl
+  ? (configuredApiUrl.endsWith('/api') ? configuredApiUrl : `${configuredApiUrl}/api`)
+  : import.meta.env.DEV
+    ? '/api'
+    : null;
+
+const getApiUrl = (path: string): string | null => API_BASE ? `${API_BASE}${path}` : null;
+
+const getAudioFilename = (mimeType: string): string => {
+  const normalizedType = mimeType.toLowerCase();
+  if (normalizedType.includes('mp4') || normalizedType.includes('m4a')) return 'voice_recording.m4a';
+  if (normalizedType.includes('ogg')) return 'voice_recording.ogg';
+  if (normalizedType.includes('wav')) return 'voice_recording.wav';
+  return 'voice_recording.webm';
+};
 
 const getUserTimezone = (): string => {
   try {
@@ -260,8 +275,10 @@ export const api = {
    */
   async processVoiceText(text: string): Promise<ExtractedTask> {
     // 1. Try server backend if available
+    const processTextUrl = getApiUrl('/voice/process-text');
     try {
-      const response = await fetch(`${API_BASE}/voice/process-text`, {
+      if (!processTextUrl) throw new Error('Backend URL is not configured');
+      const response = await fetch(processTextUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -344,29 +361,38 @@ export const api = {
 
   /**
    * Uploads raw recorded audio blob for backend Whisper/Gemini transcription & task extraction
-   * with full client-side Groq/OpenAI/Gemini fallback when deployed statically on Netlify!
+   * with full client-side Groq/OpenAI/Gemini fallback when deployed statically (e.g. AWS S3/CloudFront)!
    */
   async processVoiceAudio(audioBlob: Blob, language?: string): Promise<ExtractedTask> {
     // 1. Try backend server if reachable
+    let backendError: string | null = null;
     try {
-      const formData = new FormData();
-      formData.append('file', audioBlob, 'voice_recording.webm');
-      formData.append('user_timezone', getUserTimezone());
-      if (language) {
-        formData.append('language', language);
-      }
+      const processAudioUrl = getApiUrl('/voice/process-audio');
+      if (!processAudioUrl) {
+        backendError = 'No production backend URL is configured.';
+      } else {
+        const formData = new FormData();
+        formData.append('file', audioBlob, getAudioFilename(audioBlob.type));
+        formData.append('user_timezone', getUserTimezone());
+        if (language) {
+          formData.append('language', language);
+        }
 
-      const response = await fetch(`${API_BASE}/voice/process-audio`, {
-        method: 'POST',
-        headers: getCustomKeyHeaders(),
-        body: formData,
-      });
+        const response = await fetch(processAudioUrl, {
+          method: 'POST',
+          headers: getCustomKeyHeaders(),
+          body: formData,
+        });
 
-      const contentType = response.headers.get('content-type') || '';
-      if (response.ok && contentType.includes('application/json')) {
-        return await response.json();
+        const contentType = response.headers.get('content-type') || '';
+        if (response.ok && contentType.includes('application/json')) {
+          return await response.json();
+        }
+        const errorData = await response.json().catch(() => null);
+        backendError = errorData?.detail || `Backend audio transcription failed (HTTP ${response.status}).`;
       }
     } catch (e) {
+      backendError = e instanceof Error ? e.message : 'The audio transcription backend could not be reached.';
       console.warn('Backend API unreachable for audio transcription, trying client-side APIs:', e);
     }
 
@@ -375,7 +401,7 @@ export const api = {
     if (groqKey && groqKey.length > 15) {
       try {
         const formData = new FormData();
-        formData.append('file', audioBlob, 'recording.webm');
+        formData.append('file', audioBlob, getAudioFilename(audioBlob.type));
         formData.append('model', 'whisper-large-v3-turbo');
         formData.append('response_format', 'json');
         if (language && language !== 'auto' && language !== 'hinglish') {
@@ -404,7 +430,7 @@ export const api = {
     if (openaiKey && openaiKey.length > 15) {
       try {
         const formData = new FormData();
-        formData.append('file', audioBlob, 'recording.webm');
+        formData.append('file', audioBlob, getAudioFilename(audioBlob.type));
         formData.append('model', 'whisper-1');
 
         const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
@@ -464,7 +490,7 @@ export const api = {
     }
 
     throw new Error(
-      'Backend AI server is offline on Netlify. Please configure your Groq or Gemini API key in Settings (or type your task) to enable voice AI!'
+      `${backendError || 'Audio transcription is unavailable.'} ${API_BASE ? 'Check that VITE_API_URL points to your HTTPS FastAPI backend and that backend CORS allows this frontend origin.' : 'Set VITE_API_URL to your HTTPS FastAPI backend, or add a supported user API key in Settings.'} You can also type your task.`
     );
   },
 
@@ -473,7 +499,9 @@ export const api = {
    */
   async getTasks(): Promise<Task[]> {
     try {
-      const res = await fetch(`${API_BASE}/tasks`);
+      const tasksUrl = getApiUrl('/tasks');
+      if (!tasksUrl) throw new Error('Backend URL is not configured');
+      const res = await fetch(tasksUrl);
       const contentType = res.headers.get('content-type') || '';
       if (res.ok && contentType.includes('application/json')) {
         const data: Task[] = await res.json();
@@ -493,7 +521,9 @@ export const api = {
    */
   async createTask(taskData: TaskCreateInput): Promise<Task> {
     try {
-      const res = await fetch(`${API_BASE}/tasks`, {
+      const tasksUrl = getApiUrl('/tasks');
+      if (!tasksUrl) throw new Error('Backend URL is not configured');
+      const res = await fetch(tasksUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(taskData),

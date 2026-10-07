@@ -66,6 +66,23 @@ class TestVoiceEndpoints(unittest.TestCase):
         self.assertEqual(res.status_code, 400)
         self.assertIn("cannot be empty", res.json()["detail"])
 
+    def test_cors_allows_configured_origin(self):
+        test_origin = "http://localhost:5173"
+        res = self.client.options(
+            "/api/voice/process-text",
+            headers={
+                "Origin": test_origin,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type,"
+                "x-user-timezone",
+            },
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(
+            res.headers.get("access-control-allow-origin"),
+            test_origin,
+        )
+
     @patch("app.api.voice.transcribe_audio_file", new_callable=AsyncMock)
     def test_process_audio_success(self, mock_transcribe):
         mock_transcribe.return_value = "Kal subah 10 baje database ka assignment submit karna hai"
