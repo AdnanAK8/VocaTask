@@ -1,8 +1,11 @@
 import logging
 from fastapi import FastAPI
+from mangum import Mangum
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.api import voice, tasks
+from app.api import tasks
+from app.api import voice
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,8 +22,8 @@ app = FastAPI(
 # Enable CORS for cross-origin requests from PWA running locally or in production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=False,
+    allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -46,3 +49,5 @@ async def root():
         "docs": "/docs",
         "health": "/health"
     }
+
+handler = Mangum(app)
