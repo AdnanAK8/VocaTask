@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import './App.css';
-import { Check, ChevronRight, Clock3, Pencil, Plus, Settings, Trash2, X, Mic, Download } from 'lucide-react';
+import { Check, ChevronRight, Clock3, Pencil, Plus, Settings, Trash2, X, Mic, Download, Bell, BellOff } from 'lucide-react';
 import { VoiceRecorder } from './components/VoiceRecorder';
 import { TaskConfirmModal } from './components/TaskConfirmModal';
 import { InstallPwaBanner } from './components/InstallPwaBanner';
 import { SettingsModal } from './components/SettingsModal';
+import { ToastReminder } from './components/ToastReminder';
+import { useTaskReminders } from './hooks/useTaskReminders';
 import { api } from './services/api';
 import type { Task, ExtractedTask, TaskCreateInput, TaskUpdateInput, PriorityType, CategoryType } from './types/task';
 
@@ -16,6 +18,7 @@ interface TaskFormValues {
   time: string;
   priority: PriorityType;
   category: CategoryType;
+  reminder_required: boolean;
 }
 
 const emptyForm: TaskFormValues = {
@@ -25,6 +28,7 @@ const emptyForm: TaskFormValues = {
   time: '',
   priority: 'medium',
   category: 'general',
+  reminder_required: true,
 };
 
 const formatDate = (value?: string | null): string => {
@@ -124,6 +128,43 @@ export const App = () => {
     }
   };
 
+  const handleCompleteFromReminder = async (id: string) => {
+    try {
+      setTasks((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, status: 'completed' } : t))
+      );
+      await api.updateTask(id, { status: 'completed' });
+    } catch (err) {
+      console.error('Failed to complete task from reminder:', err);
+    }
+  };
+
+  const reminders = useTaskReminders(tasks, handleCompleteFromReminder);
+
+  const handleToggleReminder = async (task: Task) => {
+    const nextVal = !task.reminder_required;
+    try {
+      setTasks((prev) =>
+        prev.map((t) => (t.id === task.id ? { ...t, reminder_required: nextVal } : t))
+      );
+      await api.updateTask(task.id, { reminder_required: nextVal });
+      if (nextVal && reminders.permission !== 'granted') {
+        void reminders.requestPermission();
+      }
+    } catch (err) {
+      console.error('Failed to toggle reminder:', err);
+      loadTasks();
+    }
+  };
+
+  const handleHeaderNotificationClick = () => {
+    if (reminders.permission !== 'granted') {
+      void reminders.requestPermission();
+    } else {
+      reminders.testChime();
+    }
+  };
+
   const openTaskForm = (task?: Task) => {
     setEditingTask(task ?? null);
     setForm(task ? {
@@ -133,6 +174,7 @@ export const App = () => {
       time: task.scheduled_time ?? '',
       priority: task.priority,
       category: task.category,
+      reminder_required: task.reminder_required,
     } : emptyForm);
     setFormError('');
     setIsTaskFormOpen(true);
@@ -154,7 +196,7 @@ export const App = () => {
       scheduled_time: form.time || null,
       priority: form.priority,
       category: form.category,
-      reminder_required: true,
+      reminder_required: form.reminder_required,
     };
 
     try {
@@ -185,6 +227,18 @@ export const App = () => {
           <span>VoiceTasks</span>
         </a>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            className="icon-button header-notifications"
+            onClick={handleHeaderNotificationClick}
+            aria-label="Notification Reminders"
+            title={
+              reminders.permission === 'granted'
+                ? 'Push reminders active - Click to test chime'
+                : 'Click to enable push reminders'
+            }
+          >
+            <Bell size={18} style={{ color: reminders.permission === 'granted' ? '#4a6b5d' : undefined }} />
+          </button>
           <button
             className="icon-button header-install"
             onClick={() => window.dispatchEvent(new CustomEvent('open-install-pwa'))}
@@ -251,6 +305,14 @@ export const App = () => {
                 <span className={`priority-tag ${task.priority}`}>{task.priority}</span>
                 <span className={`category-tag ${task.category}`}>{task.category}</span>
                 <div className="task-actions">
+                  <button
+                    className={`task-reminder-btn ${task.reminder_required ? 'active' : 'inactive'}`}
+                    onClick={() => void handleToggleReminder(task)}
+                    aria-label={task.reminder_required ? 'Disable reminder' : 'Enable reminder'}
+                    title={task.reminder_required ? 'Reminder enabled - Click to disable' : 'Reminder disabled - Click to enable'}
+                  >
+                    {task.reminder_required ? <Bell size={15} /> : <BellOff size={15} />}
+                  </button>
                   <button onClick={() => openTaskForm(task)} aria-label={`Edit ${task.title}`} title="Edit task"><Pencil size={15} /></button>
                   <button onClick={() => void handleDeleteTask(task.id)} aria-label={`Delete ${task.title}`} title="Delete task"><Trash2 size={15} /></button>
                 </div>
@@ -301,6 +363,14 @@ export const App = () => {
                 <label>Priority<select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value as PriorityType })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
                 <label>Category<select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value as CategoryType })}><option value="general">General</option><option value="work">Work</option><option value="study">Study</option><option value="personal">Personal</option><option value="health">Health</option><option value="finance">Finance</option></select></label>
               </div>
+              <label className="form-reminder-row">
+                <input
+                  type="checkbox"
+                  checked={form.reminder_required}
+                  onChange={(e) => setForm({ ...form, reminder_required: e.target.checked })}
+                />
+                <span><Bell size={15} /> Remind me when due (push notification & chime)</span>
+              </label>
               {formError && <p className="form-error" role="alert">{formError}</p>}
               <div className="modal-actions">
                 <button type="button" className="secondary-btn" onClick={() => setIsTaskFormOpen(false)}>Cancel</button>
@@ -322,6 +392,13 @@ export const App = () => {
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+      />
+
+      <ToastReminder
+        alerts={reminders.activeAlerts}
+        onComplete={reminders.handleCompleteAlert}
+        onSnooze={reminders.handleSnoozeAlert}
+        onDismiss={reminders.handleDismissAlert}
       />
 
       <InstallPwaBanner />

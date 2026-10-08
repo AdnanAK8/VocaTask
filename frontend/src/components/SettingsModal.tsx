@@ -1,5 +1,10 @@
 import React, { useState } from 'react';
-import { X, Key, Check, ExternalLink, ShieldCheck, Sparkles } from 'lucide-react';
+import { X, Key, Check, ExternalLink, ShieldCheck, Sparkles, Bell, Volume2 } from 'lucide-react';
+import {
+  getNotificationPermission,
+  requestNotificationPermission,
+  playReminderChime,
+} from '../services/notificationService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -11,6 +16,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
   const [geminiKey, setGeminiKey] = useState(localStorage.getItem('gemini_api_key') || '');
   const [openaiKey, setOpenaiKey] = useState(localStorage.getItem('openai_api_key') || '');
   const [savedNotice, setSavedNotice] = useState(false);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>(
+    getNotificationPermission
+  );
+
+  const handleEnableNotifications = async () => {
+    const perm = await requestNotificationPermission();
+    setNotifPermission(perm);
+  };
+
+  const handleTestChime = () => {
+    playReminderChime();
+  };
 
   if (!isOpen) return null;
 
@@ -124,6 +141,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
               placeholder="sk-..."
               className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-4 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
             />
+          </div>
+
+          {/* Push Notifications & Chime Sound */}
+          <div className="pt-2 border-t border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                <Bell className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Task Reminders & Push</span>
+              </span>
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                  notifPermission === 'granted'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    : notifPermission === 'denied'
+                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                }`}
+              >
+                {notifPermission === 'granted' ? 'Enabled' : notifPermission === 'denied' ? 'Blocked' : 'Action Required'}
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-400">
+              Receive sound chimes and system notifications when tasks with reminders are due.
+            </p>
+
+            <div className="flex items-center gap-2 pt-1">
+              {notifPermission !== 'granted' && (
+                <button
+                  type="button"
+                  onClick={handleEnableNotifications}
+                  className="flex-1 py-2 px-3 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-200 text-xs font-medium transition-colors"
+                >
+                  Enable System Notifications
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleTestChime}
+                className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium flex items-center gap-1.5 transition-colors"
+                title="Test reminder chime sound"
+              >
+                <Volume2 className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Test Sound</span>
+              </button>
+            </div>
           </div>
 
           <div className="pt-2 flex items-center gap-2 text-[11px] text-slate-400">

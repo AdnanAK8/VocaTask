@@ -1432,3 +1432,267 @@ select:focus-visible {
     border-radius: 18px;
   }
 }
+
+/* =========================================================
+   TASTEFUL TOAST REMINDER NOTIFICATIONS
+   ========================================================= */
+
+.toast-reminder-container {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  pointer-events: none;
+}
+
+.toast-reminder-card {
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(231, 225, 218, 0.9);
+  border-radius: 18px;
+  padding: 16px 18px;
+  box-shadow: 0 14px 40px rgba(35, 33, 30, 0.16), 0 2px 8px rgba(35, 33, 30, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: toastSlideDown 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.2s ease;
+}
+
+@keyframes toastSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-25px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.toast-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.toast-badge-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toast-bell-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #eef5f1;
+  color: #4a6b5d;
+}
+
+.toast-ping-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e06d53;
+  animation: toastPulse 1.8s infinite;
+}
+
+@keyframes toastPulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(224, 109, 83, 0.7);
+  }
+  70% {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 6px rgba(224, 109, 83, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(224, 109, 83, 0);
+  }
+}
+
+.toast-title-tag {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #78716c;
+}
+
+.toast-close-btn {
+  background: transparent;
+  border: none;
+  color: #a8a29e;
+  padding: 4px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  transition: all 0.15s ease;
+}
+
+.toast-close-btn:hover {
+  background: #f5f0e9;
+  color: #2b2927;
+}
+
+.toast-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.toast-task-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #2b2927;
+  line-height: 1.3;
+}
+
+.toast-task-desc {
+  margin: 0;
+  font-size: 12px;
+  color: #78716c;
+  line-height: 1.4;
+}
+
+.toast-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.toast-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #4a6b5d;
+  background: #e8f0ec;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.toast-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.toast-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  transition: all 0.15s ease;
+}
+
+.toast-btn-complete {
+  flex: 1;
+  background: #4a6b5d;
+  color: #ffffff;
+}
+
+.toast-btn-complete:hover {
+  background: #3d594e;
+}
+
+.toast-btn-snooze {
+  background: #f2eee8;
+  color: #57534e;
+  border: 1px solid #e7e1da;
+}
+
+.toast-btn-snooze:hover {
+  background: #e9e3da;
+  color: #2b2927;
+}
+
+/* Reminder bell button on Task Card */
+.task-reminder-btn {
+  background: transparent;
+  border: none;
+  padding: 6px;
+  border-radius: 8px;
+  color: #a8a29e;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.task-reminder-btn:hover {
+  background: #f5f0e9;
+  color: #4a6b5d;
+}
+
+.task-reminder-btn.active {
+  color: #4a6b5d;
+  background: #e8f0ec;
+}
+
+.task-reminder-btn.inactive {
+  color: #cbd5e1;
+}
+
+/* Manual Form reminder checkbox row */
+.form-reminder-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #f8f6f2;
+  border: 1px solid #e7e1da;
+  border-radius: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.form-reminder-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #4a6b5d;
+  cursor: pointer;
+}
+
+.form-reminder-row span {
+  font-size: 13px;
+  font-weight: 600;
+  color: #44403c;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (max-width: 600px) {
+  .toast-reminder-container {
+    top: 14px;
+    right: 14px;
+    left: 14px;
+    width: auto;
+  }
+}

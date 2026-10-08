@@ -42,4 +42,6 @@ export interface TaskCreateInput {
   language?: string | null;
 }
 
-export type TaskUpdateInput = Partial<TaskCreateInput>;
+export type TaskUpdateInput = Partial<TaskCreateInput> & {
+  status?: StatusType;
+};
