@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import './App.css';
-import { Check, ChevronRight, Clock3, Pencil, Plus, Settings, Trash2, X, Mic } from 'lucide-react';
+import { Check, ChevronRight, Clock3, Pencil, Plus, Settings, Trash2, X, Mic, Download } from 'lucide-react';
 import { VoiceRecorder } from './components/VoiceRecorder';
 import { TaskConfirmModal } from './components/TaskConfirmModal';
 import { InstallPwaBanner } from './components/InstallPwaBanner';
@@ -184,9 +184,19 @@ export const App = () => {
           <span className="brand-mark">V</span>
           <span>VoiceTasks</span>
         </a>
-        <button className="icon-button header-settings" onClick={() => setIsSettingsOpen(true)} aria-label="Open settings" title="Settings">
-          <Settings size={18} />
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            className="icon-button header-install"
+            onClick={() => window.dispatchEvent(new CustomEvent('open-install-pwa'))}
+            aria-label="Install App"
+            title="Install VoiceTasks App"
+          >
+            <Download size={18} />
+          </button>
+          <button className="icon-button header-settings" onClick={() => setIsSettingsOpen(true)} aria-label="Open settings" title="Settings">
+            <Settings size={18} />
+          </button>
+        </div>
       </header>
 
       <main className="main" id="tasks">

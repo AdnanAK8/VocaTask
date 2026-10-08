@@ -11,12 +11,12 @@ from app.schemas.task import ExtractedTask, PriorityType, CategoryType
 logger = logging.getLogger("ai_parser")
 
 # Master system prompt with Few-Shot Demonstrations and Strict Output Formatting
-SYSTEM_PROMPT = """You are an expert multilingual task extraction AI engine (Siri/ChatGPT quality).
-The user speaks in any language (English, Hindi, Punjabi, Hinglish, Spanish, French, etc.).
-Your goal is to parse the voice transcript, extract the core actionable task, resolve relative dates/times against the user's current reference time, and return a clean structured JSON object.
+SYSTEM_PROMPT = """You are an expert multilingual task extraction AI engine (Siri/ChatGPT/Google Assistant quality).
+The user speaks in any language or mix (English, Hindi, Punjabi, Hinglish, Spanish, French, etc.).
+Your goal is to parse the voice transcript, extract the core actionable task, resolve relative dates/times against the user's reference time and timezone, detect priority, categorize accurately, and return a clean structured JSON object.
 
 ### Reference Time
-Reference timestamp and timezone will be provided in the user prompt.
+Reference timestamp, day of week, and timezone are provided in the user prompt.
 
 ### Output JSON Schema:
 {
@@ -30,42 +30,75 @@ Reference timestamp and timezone will be provided in the user prompt.
   "language": "<detected language, e.g. en, hi, pa, hinglish, es>"
 }
 
-### Title Formatting Rules:
-- The title MUST be a short, professional, title-cased verb or action phrase (e.g. "Submit DBMS Assignment", "Call Mom", "Study Physics", "Visit Doctor", "Pay Electricity Bill", "Gym Workout", "Wake Up for College").
-- DO NOT include relative date or time words in the title (e.g. exclude "tomorrow", "kal", "aaj", "subah", "shaam", "10 am", "6 pm", "7 baje", "baje").
-- Translate spoken Hindi/Hinglish/Punjabi colloquial phrases into clear professional English action titles while retaining proper nouns (e.g., "Rahul ko call karna" -> "Call Rahul", "kal doctor ke paas jana hai" -> "Visit Doctor").
+### Metric 1: Title Detection & Cleaning Rules:
+- The title MUST be a clean, concise, action-oriented verb or noun phrase in Title Case (e.g. "Submit Database Assignment", "Visit Doctor", "Wake Up for College", "Gym Workout", "Call Rahul About Project", "Pay Electricity Bill", "Buy Groceries", "Study Physics", "Take Medicine", "Attend Team Standup").
+- STRICTLY EXCLUDE relative date and time words from the title:
+  Do NOT include "tomorrow", "today", "yesterday", "kal", "aaj", "parson", "subah", "shaam", "raat", "dopahar", "10 am", "6 pm", "7 baje", "baje", "at 5", "next week", "tonight".
+- STRICTLY REMOVE conversational voice prefixes and fillers:
+  Exclude "remind me to", "please remind me to", "can you remind me to", "i need to", "i have to", "make sure to", "don't forget to", "note down", "add task", "schedule", "set reminder for", "mujhe", "mera task banao", "likh lo", "yaad dilana", "karna hai", "karni hai", "jana hai", "ਮੈਨੂੰ ਯਾਦ ਕਰਵਾਓ".
+- Translate colloquial Hindi/Hinglish/Punjabi verb phrases to professional English action titles while preserving proper nouns, subjects, and company names (e.g. "DBMS ka assignment submit karna" -> "Submit DBMS Assignment", "Mummy se baat karni hai" -> "Call Mom", "Bijli ka bill bharna hai" -> "Pay Electricity Bill").
 
-### Date Resolution Rules:
-- "today" / "aaj" / "ਅੱਜ" / "hoy" -> Reference date.
-- "tomorrow" / "kal" / "ਕੱਲ੍ਹ" / "mañana" -> Reference date + 1 day.
-- "day after tomorrow" / "parson" / "ਪਰਸੋਂ" / "pasado mañana" -> Reference date + 2 days.
-- Named days (e.g., "this Friday", "next Monday") -> Next occurrence of that day.
+### Metric 2: Date Resolution Rules:
+- "today" / "aaj" / "tonight" / "aaj raat" / "ਅੱਜ" / "आज" -> Exactly reference date (YYYY-MM-DD).
+- "tomorrow" / "kal" / "ਕੱਲ੍ਹ" / "कल" -> Reference date + 1 day.
+- "day after tomorrow" / "parson" / "ਪਰਸੋਂ" / "परसों" -> Reference date + 2 days.
+- "in 3 days" / "teen din baad" -> Reference date + 3 days.
+- "next week" / "agle hafte" -> Reference date + 7 days.
+- Named weekdays (e.g., "this Friday", "next Monday", "somwar", "shukrawar", "ਸੋਮਵਾਰ") -> Upcoming calendar date of that day.
+- If no date is spoken:
+  - If a specific time is mentioned that is later today, use today's date.
+  - Otherwise, default to tomorrow's date or today depending on urgency.
 
-### Time Resolution Rules (24-Hour Format):
-- "subah" / "morning" / "ਸਵੇਰੇ" / "am" -> If hour given (e.g., 10), then "10:00". Default is "09:00".
-- "dopahar" / "afternoon" / "ਦੁਪਹਿਰ" -> If hour given (e.g., 2), then "14:00". Default is "14:00".
-- "shaam" / "evening" / "ਸ਼ਾਮ" / "pm" -> If hour given (e.g., 6 or 7), add 12 (6 PM -> "18:00", 7 PM -> "19:00"). Default is "18:00".
-- "raat" / "night" / "ਰਾਤ" -> If hour given (e.g., 8 or 9), add 12 (8 PM -> "20:00", 9 PM -> "21:00"). Default is "21:00".
-- "7 baje" with "shaam" -> "19:00", NOT "07:00".
+### Metric 3: Time Resolution Rules (24-Hour Format HH:MM):
+- Explicit hour + AM/PM or time-of-day:
+  - "10 am" / "10:00 am" -> "10:00"
+  - "6 pm" / "6:00 pm" -> "18:00"
+  - "subah 8 baje" / "8 am" -> "08:00"
+  - "dopahar 2 baje" / "2 pm" -> "14:00"
+  - "shaam 6 baje" / "6 pm" -> "18:00"
+  - "shaam 7 baje" / "7 pm" -> "19:00" (NOT "07:00")
+  - "raat 9 baje" / "9 pm" -> "21:00"
+  - "raat 10 baje" / "10 pm" -> "22:00"
+- Colloquial Hindi/Punjabi terms:
+  - "dedh baje" / "ਡੇਢ ਵਜੇ" -> "13:30" (or "01:30" if morning)
+  - "dhaai baje" / "ਢਾਈ ਵਜੇ" -> "14:30" (or "02:30" if morning)
+  - "sadhe saat" -> "19:30" (if evening/shaam) or "07:30" (if morning/subah)
+  - "paune aath" -> "19:45" (if evening/shaam) or "07:45"
+  - "sawwa che" -> "18:15" (if evening/shaam) or "06:15"
+- Relative offsets:
+  - "in 30 minutes" / "aadhe ghante baad" -> reference time + 30 minutes.
+  - "in 1 hour" / "ek ghante baad" -> reference time + 1 hour.
+- Contextual defaults when AM/PM is omitted:
+  - Morning activities (wake up, college, school, breakfast, jog) at 6, 7, 8, 9, 10 -> AM (06:00, 07:00, 08:00, 09:00, 10:00).
+  - Evening activities (gym, dinner, walk, drinks, party) at 6, 7, 8, 9, 10 -> PM (18:00, 19:00, 20:00, 21:00, 22:00).
+
+### Metric 4: Priority Detection Rules:
+- "high":
+  - Explicit urgency words: "urgent", "emergency", "asap", "critical", "important", "bohot zaroori", "bahut jaruri", "zaroori", "jaruri", "turant", "abhi ke abhi", "immediately", "highest priority", "must do", "deadline", "crucial", "essential", "pakka", "vital", "ਜ਼ਰੂਰੀ", "ਤੁਰੰਤ", "जरूरी", "अति आवश्यक".
+  - High stakes commitments: "exam tomorrow", "doctor appointment", "hospital", "dentist", "interview", "flight", "deadline tonight", "bill due today".
+- "low":
+  - Non-urgent words: "low priority", "not urgent", "whenever", "kabhi bhi", "fursat me", "free time", "casual", "chill", "optional", "jab time mile", "no rush", "ਕਦੇ ਵੀ", "ਫੁਰਸਤ", "फुर्सत", "कभी भी".
+- "medium":
+  - Standard day-to-day tasks with no special urgency markers.
 
 ### Category Mapping:
-- study: assignments, exams, classes, homework, college, dbms, database, studying, school, test.
-- work: meetings, projects, clients, presentations, office, emails, sync, standup.
-- health: gym, workouts, walks, badminton, medicine, doctor, dentist, exercises.
-- finance: bills, payments, recharge, bank, money, fees, salary, rent, tax.
-- personal: family, friends, mom, dad, parties, dinners, birthdays, wake up.
-- general: other miscellaneous tasks.
+- study: assignments, exams, classes, homework, college, university, dbms, database, studying, school, test, syllabus, lecture.
+- work: meetings, projects, clients, presentations, office, emails, sync, standup, reports, sprint.
+- health: gym, workouts, walks, medicine, tablets, doctor, dentist, clinic, exercises, yoga, running, hospital.
+- finance: bills, electricity bill, recharge, bank, money, fees, salary, rent, tax, payment, credit card.
+- personal: family, friends, mom, dad, parents, party, dinner, lunch, birthday, wake up, groceries, car wash, cleaning room.
+- general: other tasks.
 
 ### Few-Shot Demonstrations:
 
-Input: "Kal subah 10 baje database ka assignment submit karna hai"
+Input: "Kal subah 10 baje database ka assignment submit karna hai bohot zaroori hai"
 Output:
 {
   "title": "Submit Database Assignment",
-  "description": "Database assignment submission",
-  "scheduled_date": "2026-10-06",
+  "description": "Database assignment submission (urgent)",
+  "scheduled_date": "2026-10-09",
   "scheduled_time": "10:00",
-  "priority": "medium",
+  "priority": "high",
   "category": "study",
   "reminder_required": true,
   "language": "hinglish"
@@ -75,8 +108,8 @@ Input: "ਕੱਲ੍ਹ ਸ਼ਾਮ 7 ਵਜੇ gym ਜਾਣਾ ਹੈ"
 Output:
 {
   "title": "Gym Workout",
-  "description": "Evening gym session",
-  "scheduled_date": "2026-10-06",
+  "description": "Evening gym workout",
+  "scheduled_date": "2026-10-09",
   "scheduled_time": "19:00",
   "priority": "medium",
   "category": "health",
@@ -84,46 +117,59 @@ Output:
   "language": "pa"
 }
 
-Input: "Remind me to call mom tomorrow evening"
+Input: "Remind me to call mom tomorrow evening whenever free"
 Output:
 {
   "title": "Call Mom",
   "description": "Call mom in the evening",
-  "scheduled_date": "2026-10-06",
+  "scheduled_date": "2026-10-09",
   "scheduled_time": "18:00",
-  "priority": "medium",
+  "priority": "low",
   "category": "personal",
   "reminder_required": true,
   "language": "en"
 }
 
-Input: "कल शाम 6 बजे gym जाना है"
+Input: "Emergency doctor appointment tomorrow at 11 AM"
 Output:
 {
-  "title": "Gym Workout",
-  "description": "Evening gym workout",
-  "scheduled_date": "2026-10-06",
-  "scheduled_time": "18:00",
-  "priority": "medium",
+  "title": "Visit Doctor",
+  "description": "Emergency doctor appointment",
+  "scheduled_date": "2026-10-09",
+  "scheduled_time": "11:00",
+  "priority": "high",
   "category": "health",
-  "reminder_required": true,
-  "language": "hi"
-}
-
-Input: "Tomorrow at 6 PM I need to call Rahul about the project"
-Output:
-{
-  "title": "Call Rahul About Project",
-  "description": "Project discussion with Rahul",
-  "scheduled_date": "2026-10-06",
-  "scheduled_time": "18:00",
-  "priority": "medium",
-  "category": "work",
   "reminder_required": true,
   "language": "en"
 }
 
-Return ONLY valid JSON matching the schema. No markdown formatting or extra commentary.
+Input: "Bijli ka bill pay karna hai parson shaam 6 baje"
+Output:
+{
+  "title": "Pay Electricity Bill",
+  "description": "Electricity bill payment",
+  "scheduled_date": "2026-10-10",
+  "scheduled_time": "18:00",
+  "priority": "medium",
+  "category": "finance",
+  "reminder_required": true,
+  "language": "hinglish"
+}
+
+Input: "Kal subah 7 baje college ke liye uthna hai"
+Output:
+{
+  "title": "Wake Up for College",
+  "description": "Wake up for college",
+  "scheduled_date": "2026-10-09",
+  "scheduled_time": "07:00",
+  "priority": "medium",
+  "category": "personal",
+  "reminder_required": true,
+  "language": "hinglish"
+}
+
+Return ONLY valid JSON matching the schema. No markdown backticks, no explanations.
 """
 
 WORD_TO_NUMBER = {
@@ -246,10 +292,14 @@ def polish_task_title(title: str) -> str:
         return to_title_case(f"{v} {obj}")
 
     # 7. Pattern: gym / workout / walk
-    m3 = re.match(r'^(gym|walk|workout)\s+(?:jana|jani|jaana|जाना|ਜਾਣਾ)?$', cleaned, re.IGNORECASE)
+    if cleaned.lower() in ('gym', 'gym jana'):
+        return "Gym"
+    if cleaned.lower() in ('gym workout',):
+        return "Gym Workout"
+    m3 = re.match(r'^(gym|walk|workout)(?:\s+(?:jana|jani|jaana|जाना|ਜਾਣਾ))?$', cleaned, re.IGNORECASE)
     if m3:
         word = m3.group(1).lower()
-        if word == 'gym': return "Gym Workout"
+        if word == 'gym': return "Gym"
         return to_title_case(word)
 
     # 8. Pattern: pay [bill]
@@ -269,12 +319,36 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
     
     # 1. Date resolution
     task_date: Optional[date] = None
+    # Check weekday names
+    weekday_map = {
+        'monday': 0, 'somwar': 0, 'ਸੋਮਵਾਰ': 0, 'सोमवार': 0,
+        'tuesday': 1, 'mangalwar': 1, 'ਮੰਗਲਵਾਰ': 1, 'मंगलवार': 1,
+        'wednesday': 2, 'budhwar': 2, 'ਬੁੱਧਵਾਰ': 2, 'बुधवार': 2,
+        'thursday': 3, 'guruwar': 3, 'veervar': 3, 'ਵੀਰਵਾਰ': 3, 'गुरुवार': 3,
+        'friday': 4, 'shukrawar': 4, 'ਸ਼ੁੱਕਰਵਾਰ': 4, 'शुक्रवार': 4,
+        'saturday': 5, 'shaniwar': 5, 'ਸ਼ਨਿੱਚਰਵਾਰ': 5, 'शनिवार': 5,
+        'sunday': 6, 'ravivar': 6, 'aitwar': 6, 'ਐਤਵਾਰ': 6, 'रविवार': 6
+    }
+    
+    matched_weekday = None
+    for day_name, day_idx in weekday_map.items():
+        if re.search(rf'\b{re.escape(day_name)}\b', text_lower):
+            matched_weekday = day_idx
+            break
+
     if any(k in text_lower for k in ["parson", "day after tomorrow", "day after", "ਪਰਸੋਂ", "परसों"]):
         task_date = (ref_dt + timedelta(days=2)).date()
     elif any(k in text_lower for k in ["kal", "tomorrow", "ਕੱਲ੍ਹ", "कल"]):
         task_date = (ref_dt + timedelta(days=1)).date()
-    elif any(k in text_lower for k in ["aaj", "today", "ਅੱਜ", "आज"]):
+    elif any(k in text_lower for k in ["aaj", "today", "tonight", "aaj raat", "ਅੱਜ", "आज"]):
         task_date = ref_dt.date()
+    elif any(k in text_lower for k in ["agle hafte", "next week", "ਅਗਲੇ ਹਫ਼ਤੇ"]):
+        task_date = (ref_dt + timedelta(days=7)).date()
+    elif matched_weekday is not None:
+        days_ahead = (matched_weekday - ref_dt.weekday()) % 7
+        if days_ahead == 0:
+            days_ahead = 7
+        task_date = (ref_dt + timedelta(days=days_ahead)).date()
     else:
         task_date = (ref_dt + timedelta(days=1)).date()
 
@@ -305,20 +379,40 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
         normalized_text = re.sub(rf'(?i)\b{re.escape(word)}\s*(baje|बजे|ਵਜੇ|am|pm|o\'clock)', f'{num} \\1', normalized_text)
         normalized_text = re.sub(rf'(?i)(subah|subh|shaam|sham|raat|morning|evening|night|सवेरे|सुबह|शाम|रात|ਸਵੇਰੇ|ਸ਼ਾਮ|ਰਾਤ)\s+{re.escape(word)}\b', f'\\1 {num}', normalized_text)
 
-    parsed_hour: Optional[int] = None
-    parsed_minutes: int = 0
-
-    if re.search(r'\b(dedh|ਡੇਢ|डेढ़)\s*(?:baje|बजे|ਵਜੇ)?\b', normalized_text):
+    # Relative time offsets ("in 30 minutes", "aadhe ghante baad", "1 ghante baad")
+    m_rel_min = re.search(r'\b(?:in\s+)?(\d{1,2})\s*(?:min|mins|minutes|minute)\b|\b(\d{1,2})\s*minute\s+baad\b', normalized_text)
+    m_rel_hour = re.search(r'\b(?:in\s+)?(\d{1,2})\s*(?:hr|hrs|hour|hours)\b|\b(\d{1,2})\s*ghante?\s+baad\b', normalized_text)
+    if "aadhe ghante" in normalized_text or "half an hour" in normalized_text:
+        target_dt = ref_dt + timedelta(minutes=30)
+        task_time = target_dt.strftime("%H:%M")
+        task_date = target_dt.date()
+    elif m_rel_min:
+        mins = int(m_rel_min.group(1) or m_rel_min.group(2))
+        target_dt = ref_dt + timedelta(minutes=mins)
+        task_time = target_dt.strftime("%H:%M")
+        task_date = target_dt.date()
+    elif m_rel_hour:
+        hrs = int(m_rel_hour.group(1) or m_rel_hour.group(2))
+        target_dt = ref_dt + timedelta(hours=hrs)
+        task_time = target_dt.strftime("%H:%M")
+        task_date = target_dt.date()
+    elif re.search(r'\b(dedh|ਡੇਢ|डेढ़)\s*(?:baje|बजे|ਵਜੇ)?\b', normalized_text):
         parsed_hour = 1
         parsed_minutes = 30
+        h = 13 if (is_afternoon or is_pm) else 1
+        task_time = f"{h:02d}:30"
     elif re.search(r'\b(dhaai|dhayi|ਢਾਈ|ढाई)\s*(?:baje|बजे|ਵਜੇ)?\b', normalized_text):
         parsed_hour = 2
         parsed_minutes = 30
+        h = 14 if (is_afternoon or is_pm) else 2
+        task_time = f"{h:02d}:30"
     else:
         m_half = re.search(r'\b(?:sadhe|saadhe|ਸਾਢੇ|साढ़े)\s+(\d{1,2})', normalized_text)
         m_sava = re.search(r'\b(?:sava|sawwa|ਸਵਾ|सवा)\s+(\d{1,2})', normalized_text)
         m_paune = re.search(r'\b(?:paune|pauna|ਪੌਣੇ|पौने)\s+(\d{1,2})', normalized_text)
         
+        parsed_hour: Optional[int] = None
+        parsed_minutes: int = 0
         if m_half:
             parsed_hour = int(m_half.group(1))
             parsed_minutes = 30
@@ -335,19 +429,25 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
                 parsed_hour = int(time_match.group(1))
                 parsed_minutes = int(time_match.group(2)) if time_match.group(2) else 0
 
-    if parsed_hour is not None:
-        hour = parsed_hour
-        minutes = parsed_minutes
-        if 1 <= hour <= 12:
-            if is_pm and hour < 12:
-                hour += 12
-            elif is_afternoon and 1 <= hour <= 6:
-                hour += 12
-            elif is_am and hour == 12:
-                hour = 0
-            task_time = f"{hour:02d}:{minutes:02d}"
-        elif 0 <= hour <= 23:
-            task_time = f"{hour:02d}:{minutes:02d}"
+        if parsed_hour is not None:
+            hour = parsed_hour
+            minutes = parsed_minutes
+            if 1 <= hour <= 12:
+                if is_pm and hour < 12:
+                    hour += 12
+                elif is_afternoon and 1 <= hour <= 6:
+                    hour += 12
+                elif is_am and hour == 12:
+                    hour = 0
+                elif not is_am and not is_pm and not is_afternoon:
+                    # Contextual time-of-day inference
+                    if any(w in text_lower for w in ["gym", "workout", "dinner", "evening walk", "party", "club"]) and 5 <= hour <= 11:
+                        hour += 12
+                    elif any(w in text_lower for w in ["college", "school", "wake", "uthna", "breakfast", "exam", "class"]) and 6 <= hour <= 11:
+                        pass # keep morning AM
+                task_time = f"{hour:02d}:{minutes:02d}"
+            elif 0 <= hour <= 23:
+                task_time = f"{hour:02d}:{minutes:02d}"
     
     if not task_time:
         if is_pm:
@@ -363,54 +463,69 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
     category = "general"
     health_keywords = [
         "gym", "workout", "exercise", "walk", "badminton", "cricket", "football", "tennis",
-        "yoga", "swimming", "cycling", "run", "running", "jogging", "medicine", "doctor",
-        "dentist", "health", "ਦਵਾਈ", "ਡਾਕਟਰ", "ਦੌੜ", "दवा", "डॉक्टर", "व्यायाम"
+        "yoga", "swimming", "cycling", "run", "running", "jogging", "medicine", "tablets", "doctor",
+        "dentist", "health", "hospital", "clinic", "ਦਵਾਈ", "ਡਾਕਟਰ", "ਦੌੜ", "दवा", "डॉक्टर", "व्यायाम"
     ]
     personal_keywords = [
         "mom", "dad", "mother", "father", "friend", "rahul", "party", "dinner", "lunch",
-        "birthday", "gift", "family", "relative", "sister", "brother", "ਮੰਮੀ", "ਡੈਡੀ", "ਦੋਸਤ", "मम्मी", "पापा", "दोस्त"
+        "birthday", "gift", "family", "relative", "sister", "brother", "groceries", "car wash", "doodh",
+        "ਮੰਮੀ", "ਡੈਡੀ", "ਦੋਸਤ", "मम्मी", "पापा", "दोस्त"
     ]
     wake_keywords = [
         "uthna", "uthana", "jagna", "wake up", "get up", "ਉੱਠਣਾ", "ਉਠਣਾ", "उठना", "जागना"
     ]
-    if any(w in text_lower for w in ["dbms", "database", "assignment", "study", "exam", "padhna", "homework", "class", "college", "school", "test", "course", "ਪੜ੍ਹਨਾ", "ਪੜ੍ਹਾਈ", "पढ़ना", "परीक्षा"]):
+    if any(w in text_lower for w in ["dbms", "database", "assignment", "study", "exam", "padhna", "homework", "class", "college", "school", "test", "course", "lecture", "ਪੜ੍ਹਨਾ", "ਪੜ੍ਹਾਈ", "पढ़ना", "परीक्षा"]):
         category = "study"
-    elif any(w in text_lower for w in personal_keywords):
-        category = "personal"
     elif any(w in text_lower for w in health_keywords):
         category = "health"
     elif any(w in text_lower for w in ["meeting", "project", "office", "client", "boss", "work", "presentation", "interview", "client call", "email", "report", "standup", "sync", "ਮੀਟਿੰਗ", "ਕੰਮ", "मीटिंग"]):
         category = "work"
-    elif any(w in text_lower for w in ["bill", "recharge", "fee", "pay", "bank", "money", "rent", "salary", "loan", "tax", "ਪੈਸੇ", "ਬਿੱਲ", "पैसे", "बिल"]):
+    elif any(w in text_lower for w in ["bill", "recharge", "fee", "pay", "bank", "money", "rent", "salary", "loan", "tax", "credit card", "ਪੈਸੇ", "ਬਿੱਲ", "पैसे", "बिल"]):
         category = "finance"
-    elif any(w in text_lower for w in wake_keywords):
+    elif any(w in text_lower for w in personal_keywords) or any(w in text_lower for w in wake_keywords):
         category = "personal"
 
-    # 4. Priority detection
+    # 4. Metric 4: Priority detection
     priority = "medium"
-    if any(w in text_lower for w in ["urgent", "zaroori", "jaruri", "important", "asap", "emergency", "crucial", "ਜ਼ਰੂਰੀ", "जरूरी"]):
+    high_urgency_keywords = [
+        "urgent", "bohot zaroori", "bahut jaruri", "bahut zaroori", "zaroori", "jaruri",
+        "important", "asap", "emergency", "crucial", "critical", "turant", "abhi ke abhi",
+        "immediately", "highest priority", "high priority", "must do", "pakka",
+        "deadline", "vital", "ਜ਼ਰੂਰੀ", "ਤੁਰੰਤ", "जरूरी", "अति आवश्यक"
+    ]
+    low_priority_keywords = [
+        "kabhi bhi", "casual", "whenever", "low priority", "not urgent", "fursat me",
+        "free time", "jab time mile", "chill", "optional", "no rush", "ਕਦੇ ਵੀ", "ਫੁਰਸਤ", "फुर्सत", "कभी भी"
+    ]
+    if any(w in text_lower for w in high_urgency_keywords):
         priority = "high"
-    elif any(w in text_lower for w in ["kabhi bhi", "casual", "whenever", "low priority", "ਹੌਲੀ", "फुर्सत"]):
+    elif any(w in text_lower for w in ["exam", "doctor", "dentist", "hospital", "interview", "flight"]):
+        priority = "high"
+    elif any(w in text_lower for w in low_priority_keywords):
         priority = "low"
 
     # 5. Clean Title Extraction
     clean_title = transcript
     latin_phrases = [
-        "remind me to", "remind me", "tomorrow at", "tomorrow evening", "tomorrow morning",
+        "remind me to", "remind me", "please remind me to", "can you remind me to",
+        "tomorrow at", "tomorrow evening", "tomorrow morning",
         "tomorrow afternoon", "tomorrow night", "tomorrow", "today at", "today evening",
         "today morning", "today afternoon", "today night", "today", "yesterday",
         "day after tomorrow", "i need to", "i have to", "have to", "need to",
-        "urgent", "important", "asap", "at", "o'clock", "before",
+        "make sure to", "don't forget to", "note down", "add task", "schedule",
+        "urgent", "important", "asap", "emergency", "bohot zaroori", "bahut jaruri", "bahut zaroori",
+        "zaroori", "jaruri", "turant", "abhi ke abhi", "at", "o'clock", "before",
+        "whenever free", "whenever", "casual", "free time", "fursat me",
         "evening", "morning", "afternoon", "night",
         "kal shaam", "kal subah", "kal raat", "kal dopahar", "kal",
         "aaj shaam", "aaj subah", "aaj raat", "aaj", "parson",
-        "mujhe", "karna hai", "karni hai", "jana hai", "jani hai", "dena hai", "deni hai",
-        "karna", "jana", "hai", "ko", "me", "mein", "baje"
+        "mujhe", "mera task banao", "likh lo", "karna hai", "karni hai", "jana hai", "jani hai",
+        "dena hai", "deni hai", "karna", "jana", "hai", "ko", "me", "mein", "baje"
     ]
     indic_phrases = [
         "कल सुबह", "कल शाम", "कल रात", "कल दोपहर", "कल", "आज सुबह", "आज शाम", "आज रात", "आज", "परसों",
         "मुझे", "करना है", "जाना है", "देना है", "है", "को", "में", "बजे", "सुबह", "शाम", "दोपहर", "रात", "जरूरी",
-        "ਕੱਲ੍ਹ ਸ਼ਾਮ", "ਕੱਲ੍ਹ ਸਵੇਰੇ", "ਕੱਲ੍ਹ ਰਾਤ", "ਕੱਲ੍ਹ ਦੁਪਹਿਰ", "ਕੱਲ੍ਹ", "ਅੱਜ ਸ਼ਾਮ", "ਅੱਜ ਸਵੇਰੇ", "ਅੱਜ ਰਾਤ", "ਅੱਜ",
+        "कੱਲ੍ਹ ਸ਼ਾਮ", "ਕੱਲ੍ਹ ਸਵੇਰੇ", "ਕੱਲ੍ਹ ਰਾਤ", "ਕੱਲ੍ਹ ਦੁਪਹਿਰ", "ਕੱਲ੍ਹ", "ਅੱਜ ਸ਼ਾਮ", "ਅੱਜ ਸਵੇਰੇ", "ਅੱਜ ਰਾਤ", "ਅੱਜ",
         "ਪਰਸੋਂ", "ਮੈਨੂੰ", "ਕਰਨਾ ਹੈ", "ਜਾਣਾ ਹੈ", "ਦੇਣਾ ਹੈ", "ਹੈ", "ਨੂੰ", "ਵਿੱਚ", "ਵਜੇ", "ਸਵੇਰੇ", "ਸ਼ਾਮ", "ਰਾਤ", "ਜ਼ਰੂਰੀ"
     ]
 
@@ -420,10 +535,6 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
     for word in sorted(WORD_TO_NUMBER.keys(), key=len, reverse=True):
         clean_title = re.sub(rf'(?i)\b{re.escape(word)}\s*(?:baje|बजे|ਵਜੇ|am|pm|o\'clock)\b', '', clean_title)
         clean_title = re.sub(rf'(?i)\b(?:subah|subh|shaam|sham|raat|morning|evening|night|सवेरे|सुबह|शाम|रात|ਸਵੇਰੇ|ਸ਼ਾਮ|ਰਾਤ)\s+{re.escape(word)}\b', '', clean_title)
-
-    for word, num in WORD_TO_NUMBER.items():
-        if parsed_hour is not None and num == parsed_hour:
-            clean_title = re.sub(rf'(?i)\b{re.escape(word)}\b', '', clean_title)
 
     for phrase in sorted(latin_phrases, key=len, reverse=True):
         clean_title = re.sub(rf'(?i)\b{re.escape(phrase)}\b', '', clean_title)
@@ -449,7 +560,7 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
         detected_lang = "pa"
     elif any(ord(c) >= 0x0900 and ord(c) <= 0x097F for c in transcript):
         detected_lang = "hi"
-    elif any(w in text_lower for w in ["karna", "hai", "subah", "shaam", "baje", "mera", "kal"]):
+    elif any(w in text_lower for w in ["karna", "hai", "subah", "shaam", "baje", "mera", "kal", "zaroori"]):
         detected_lang = "hinglish"
 
     return {
@@ -474,8 +585,8 @@ async def parse_voice_to_task(
     Takes raw multilingual transcript and extracts structured task metadata.
     Attempts:
     1. Google Gemini (gemini-2.0-flash / gemini-1.5-flash) with structured JSON
-    2. Groq LLM (llama-3.3-70b-versatile) with system demonstrations
-    3. OpenAI LLM (gpt-4o-mini)
+    2. OpenAI LLM (gpt-4o-mini)
+    3. Groq LLM (llama-3.3-70b-versatile)
     4. Refined Heuristic Multilingual Parser with Natural Title Polishing
     """
     try:
@@ -489,13 +600,22 @@ async def parse_voice_to_task(
     now_user = datetime.now(tz)
     ref_info = f"Current timestamp: {now_user.strftime('%Y-%m-%d %H:%M:%S')}, Day: {now_user.strftime('%A')}, Timezone: {timezone_name}"
 
-    # 1. Try Gemini if key is provided and valid (check placeholder strings)
-    gemini_key = gemini_api_key or settings.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY")
-    if gemini_key and len(gemini_key) > 15 and not gemini_key.startswith("AIzaSyDXYy"):
+    # Resolve keys with auto-detection
+    raw_gemini = (gemini_api_key or settings.effective_gemini_key or os.environ.get("GEMINI_API_KEY", "")).strip()
+    raw_openai = (openai_api_key or settings.effective_openai_key or os.environ.get("OPENAI_API_KEY", "")).strip()
+    raw_groq = (groq_api_key or settings.GROQ_API_KEY or os.environ.get("GROQ_API_KEY", "")).strip()
+
+    # If an OpenAI key was provided in Gemini field, alias it to OpenAI
+    if raw_gemini.startswith("sk-") and not raw_openai:
+        raw_openai = raw_gemini
+        raw_gemini = ""
+
+    # 1. Try Google Gemini (gemini-2.0-flash / gemini-1.5-flash)
+    if raw_gemini and len(raw_gemini) > 10 and not raw_gemini.startswith("AIzaSyDXYy"):
         try:
             from google import genai
             from google.genai import types
-            client = genai.Client(api_key=gemini_key)
+            client = genai.Client(api_key=raw_gemini)
             prompt = f"{ref_info}\nUser Voice Transcript: \"{transcript}\""
             
             try:
@@ -507,7 +627,8 @@ async def parse_voice_to_task(
                         temperature=0.0
                     )
                 )
-            except Exception:
+            except Exception as e_20:
+                logger.info(f"Gemini 2.0 Flash parse retry with 1.5-flash: {e_20}")
                 response = client.models.generate_content(
                     model="gemini-1.5-flash",
                     contents=f"{SYSTEM_PROMPT}\n\n{prompt}",
@@ -516,20 +637,51 @@ async def parse_voice_to_task(
                         temperature=0.0
                     )
                 )
-            if response.text:
-                parsed = json.loads(response.text)
+
+            if response and response.text:
+                cleaned_text = response.text.strip()
+                if cleaned_text.startswith("```json"):
+                    cleaned_text = cleaned_text[7:]
+                if cleaned_text.startswith("```"):
+                    cleaned_text = cleaned_text[3:]
+                if cleaned_text.endswith("```"):
+                    cleaned_text = cleaned_text[:-3]
+                parsed = json.loads(cleaned_text.strip())
                 parsed["original_transcript"] = transcript
-                logger.info(f"Gemini parsed task successfully: {parsed.get('title')}")
+                logger.info(f"Google Gemini parsed task successfully: {parsed.get('title')}")
                 return ExtractedTask(**parsed)
         except Exception as e:
-            logger.warning(f"Gemini task parsing fallback: {e}")
+            logger.warning(f"Google Gemini task parsing fallback: {e}")
 
-    # 2. Try Groq LLM (Llama 3.3 70B)
-    groq_key = groq_api_key or settings.GROQ_API_KEY or os.environ.get("GROQ_API_KEY")
-    if groq_key and len(groq_key) > 15:
+    # 2. Try OpenAI LLM (gpt-4o-mini)
+    if raw_openai and len(raw_openai) > 10:
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=raw_openai)
+            prompt = f"{ref_info}\nUser Voice Transcript: \"{transcript}\""
+            
+            completion = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.0
+            )
+            raw_json = completion.choices[0].message.content
+            parsed = json.loads(raw_json)
+            parsed["original_transcript"] = transcript
+            logger.info(f"OpenAI parsed task successfully: {parsed.get('title')}")
+            return ExtractedTask(**parsed)
+        except Exception as e:
+            logger.warning(f"OpenAI task parsing fallback: {e}")
+
+    # 3. Try Groq LLM (Llama 3.3 70B)
+    if raw_groq and len(raw_groq) > 10:
         try:
             from groq import Groq
-            client = Groq(api_key=groq_key)
+            client = Groq(api_key=raw_groq)
             prompt = f"{ref_info}\nUser Voice Transcript: \"{transcript}\""
             
             completion = client.chat.completions.create(
@@ -548,30 +700,6 @@ async def parse_voice_to_task(
             return ExtractedTask(**parsed)
         except Exception as e:
             logger.warning(f"Groq task parsing fallback: {e}")
-
-    # 3. Try OpenAI LLM
-    openai_key = openai_api_key or settings.OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY")
-    if openai_key and len(openai_key) > 15:
-        try:
-            from openai import OpenAI
-            client = OpenAI(api_key=openai_key)
-            prompt = f"{ref_info}\nUser Voice Transcript: \"{transcript}\""
-            
-            completion = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.0
-            )
-            raw_json = completion.choices[0].message.content
-            parsed = json.loads(raw_json)
-            parsed["original_transcript"] = transcript
-            return ExtractedTask(**parsed)
-        except Exception as e:
-            logger.warning(f"OpenAI task parsing fallback: {e}")
 
     # 4. Fallback to refined intelligent multilingual heuristic
     logger.info("Using refined intelligent heuristic multilingual parser with natural title polishing.")

@@ -158,12 +158,47 @@ export function heuristicParseTask(transcript: string): ExtractedTask {
   const dayAfter = new Date(now);
   dayAfter.setDate(dayAfter.getDate() + 2);
 
+  const in3Days = new Date(now);
+  in3Days.setDate(in3Days.getDate() + 3);
+
+  const nextWeek = new Date(now);
+  nextWeek.setDate(nextWeek.getDate() + 7);
+
+  const weekdayMap: Record<string, number> = {
+    monday: 1, somwar: 1, 'ਸੋਮਵਾਰ': 1, 'सोमवार': 1,
+    tuesday: 2, mangalwar: 2, 'ਮੰਗਲਵਾਰ': 2, 'मंगलवार': 2,
+    wednesday: 3, budhwar: 3, 'ਬੁੱਧਵਾਰ': 3, 'बुधवार': 3,
+    thursday: 4, guruwar: 4, veervar: 4, 'ਵੀਰਵਾਰ': 4, 'गुरुवार': 4,
+    friday: 5, shukrawar: 5, 'ਸ਼ੁੱਕਰਵਾਰ': 5, 'शुक्रवार': 5,
+    saturday: 6, shaniwar: 6, 'ਸ਼ਨਿੱਚਰਵਾਰ': 6, 'शनिवार': 6,
+    sunday: 0, ravivar: 0, aitwar: 0, 'ਐਤਵਾਰ': 0, 'रविवार': 0,
+  };
+
+  let matchedWeekday: number | null = null;
+  for (const [dayName, dayIdx] of Object.entries(weekdayMap)) {
+    if (new RegExp(`\\b${dayName}\\b`, 'i').test(textLower)) {
+      matchedWeekday = dayIdx;
+      break;
+    }
+  }
+
   if (['parson', 'day after tomorrow', 'ਪਰਸੋਂ', 'परसों'].some((k) => textLower.includes(k))) {
     scheduledDate = dayAfter.toISOString().split('T')[0];
   } else if (['kal', 'tomorrow', 'ਕੱਲ੍ਹ', 'कल'].some((k) => textLower.includes(k))) {
     scheduledDate = tomorrow.toISOString().split('T')[0];
-  } else if (['aaj', 'today', 'ਅੱਜ', 'आज'].some((k) => textLower.includes(k))) {
+  } else if (['aaj', 'today', 'tonight', 'aaj raat', 'ਅੱਜ', 'आज'].some((k) => textLower.includes(k))) {
     scheduledDate = now.toISOString().split('T')[0];
+  } else if (['3 din baad', 'in 3 days'].some((k) => textLower.includes(k))) {
+    scheduledDate = in3Days.toISOString().split('T')[0];
+  } else if (['agle hafte', 'next week', 'ਅਗਲੇ ਹਫ਼ਤੇ'].some((k) => textLower.includes(k))) {
+    scheduledDate = nextWeek.toISOString().split('T')[0];
+  } else if (matchedWeekday !== null) {
+    const currentDay = now.getDay();
+    let daysToAdd = (matchedWeekday - currentDay + 7) % 7;
+    if (daysToAdd === 0) daysToAdd = 7;
+    const targetDate = new Date(now);
+    targetDate.setDate(targetDate.getDate() + daysToAdd);
+    scheduledDate = targetDate.toISOString().split('T')[0];
   } else {
     scheduledDate = tomorrow.toISOString().split('T')[0];
   }
@@ -171,7 +206,7 @@ export function heuristicParseTask(transcript: string): ExtractedTask {
   // 2. Time resolution
   let scheduledTime: string | null = null;
   const isPm = ['shaam', 'sham', 'raat', 'evening', 'night', 'pm', 'p.m.', 'शाम', 'रात', 'ਸ਼ਾਮ', 'ਰਾਤ'].some((k) => textLower.includes(k));
-  const isAm = ['subah', 'subh', 'morning', 'am', 'a.m.', 'सुबह', 'सवेरे', '<ctrl42>ਸਵੇਰੇ', 'ਸਵੇਰ'].some((k) => textLower.includes(k));
+  const isAm = ['subah', 'subh', 'morning', 'am', 'a.m.', 'सुबह', 'सवेरे', 'ਸਵੇਰੇ', 'ਸਵੇਰ'].some((k) => textLower.includes(k));
   const isAfternoon = ['dopahar', 'afternoon', 'ਦੁਪਹਿਰ', 'दोपहर'].some((k) => textLower.includes(k));
 
   let parsedHour: number | null = null;
@@ -183,21 +218,73 @@ export function heuristicParseTask(transcript: string): ExtractedTask {
     normalizedText = normalizedText.replace(re, `${num} $1`);
   });
 
-  const timeMatch = normalizedText.match(/(\d{1,2})(?::(\d{2}))?\s*(?:baje|बजे|ਵਜੇ|pm|am|o'clock)?/i);
-  if (timeMatch) {
-    parsedHour = parseInt(timeMatch[1], 10);
-    if (timeMatch[2]) parsedMinutes = parseInt(timeMatch[2], 10);
+  // Relative minutes or hours ("in 30 minutes", "aadhe ghante baad", "1 ghante baad")
+  const mRelMin = normalizedText.match(/\b(?:in\s+)?(\d{1,2})\s*(?:min|mins|minutes|minute)\b|\b(\d{1,2})\s*minute\s+baad\b/i);
+  const mRelHour = normalizedText.match(/\b(?:in\s+)?(\d{1,2})\s*(?:hr|hrs|hour|hours)\b|\b(\d{1,2})\s*ghante?\s+baad\b/i);
+  if (normalizedText.includes('aadhe ghante') || normalizedText.includes('half an hour')) {
+    const t = new Date(now.getTime() + 30 * 60000);
+    scheduledTime = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+    scheduledDate = t.toISOString().split('T')[0];
+  } else if (mRelMin) {
+    const mins = parseInt(mRelMin[1] || mRelMin[2], 10);
+    const t = new Date(now.getTime() + mins * 60000);
+    scheduledTime = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+    scheduledDate = t.toISOString().split('T')[0];
+  } else if (mRelHour) {
+    const hrs = parseInt(mRelHour[1] || mRelHour[2], 10);
+    const t = new Date(now.getTime() + hrs * 3600000);
+    scheduledTime = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+    scheduledDate = t.toISOString().split('T')[0];
+  } else if (/\b(dedh|ਡੇਢ|डेढ़)\s*(?:baje|बजे|ਵਜੇ)?\b/i.test(normalizedText)) {
+    parsedHour = 1;
+    parsedMinutes = 30;
+    const h = isAfternoon || isPm ? 13 : 1;
+    scheduledTime = `${String(h).padStart(2, '0')}:30`;
+  } else if (/\b(dhaai|dhayi|ਢਾਈ|ढाई)\s*(?:baje|बजे|ਵਜੇ)?\b/i.test(normalizedText)) {
+    parsedHour = 2;
+    parsedMinutes = 30;
+    const h = isAfternoon || isPm ? 14 : 2;
+    scheduledTime = `${String(h).padStart(2, '0')}:30`;
+  } else {
+    const mHalf = normalizedText.match(/\b(?:sadhe|saadhe|ਸਾਢੇ|साढ़े)\s+(\d{1,2})/i);
+    const mSava = normalizedText.match(/\b(?:sava|sawwa|ਸਵਾ|सवा)\s+(\d{1,2})/i);
+    const mPaune = normalizedText.match(/\b(?:paune|pauna|ਪੌਣੇ|पौने)\s+(\d{1,2})/i);
+
+    if (mHalf) {
+      parsedHour = parseInt(mHalf[1], 10);
+      parsedMinutes = 30;
+    } else if (mSava) {
+      parsedHour = parseInt(mSava[1], 10);
+      parsedMinutes = 15;
+    } else if (mPaune) {
+      const h = parseInt(mPaune[1], 10);
+      parsedHour = h > 1 ? h - 1 : 12;
+      parsedMinutes = 45;
+    } else {
+      const timeMatch = normalizedText.match(/(\d{1,2})(?::(\d{2}))?\s*(?:baje|बजे|ਵਜੇ|pm|am|o'clock)?/i);
+      if (timeMatch) {
+        parsedHour = parseInt(timeMatch[1], 10);
+        if (timeMatch[2]) parsedMinutes = parseInt(timeMatch[2], 10);
+      }
+    }
+
+    if (parsedHour !== null && !isNaN(parsedHour)) {
+      let h = parsedHour;
+      if (h >= 1 && h <= 12) {
+        if (isPm && h < 12) h += 12;
+        else if (isAfternoon && h <= 6) h += 12;
+        else if (isAm && h === 12) h = 0;
+        else if (!isAm && !isPm && !isAfternoon) {
+          if (['gym', 'workout', 'dinner', 'evening walk', 'party', 'drinks'].some((w) => textLower.includes(w)) && h >= 5 && h <= 11) {
+            h += 12;
+          }
+        }
+      }
+      scheduledTime = `${String(h).padStart(2, '0')}:${String(parsedMinutes).padStart(2, '0')}`;
+    }
   }
 
-  if (parsedHour !== null && !isNaN(parsedHour)) {
-    let h = parsedHour;
-    if (h >= 1 && h <= 12) {
-      if (isPm && h < 12) h += 12;
-      else if (isAfternoon && h <= 6) h += 12;
-      else if (isAm && h === 12) h = 0;
-    }
-    scheduledTime = `${String(h).padStart(2, '0')}:${String(parsedMinutes).padStart(2, '0')}`;
-  } else {
+  if (!scheduledTime) {
     if (isPm) scheduledTime = '18:00';
     else if (isAm) scheduledTime = '09:00';
     else if (isAfternoon) scheduledTime = '14:00';
@@ -222,9 +309,12 @@ export function heuristicParseTask(transcript: string): ExtractedTask {
 
   // 4. Priority detection
   let priority: PriorityType = 'medium';
-  if (['urgent', 'zaroori', 'jaruri', 'important', 'asap', 'emergency', 'ਜ਼ਰੂਰੀ', 'जरूरी'].some((w) => textLower.includes(w))) {
+  const highKeywords = ['urgent', 'zaroori', 'jaruri', 'bohot zaroori', 'bahut jaruri', 'important', 'asap', 'emergency', 'turant', 'abhi ke abhi', 'immediately', 'must do', 'deadline', 'crucial', 'pakka', 'exam', 'doctor', 'dentist', 'hospital', 'interview', 'ਜ਼ਰੂਰੀ', 'ਤੁਰੰਤ', 'जरूरी', 'अति आवश्यक'];
+  const lowKeywords = ['casual', 'whenever', 'low priority', 'not urgent', 'kabhi bhi', 'fursat me', 'free time', 'chill', 'optional', 'no rush', 'ਕਦੇ ਵੀ', 'ਫੁਰਸਤ', 'फुर्सत', 'कभी भी'];
+
+  if (highKeywords.some((w) => textLower.includes(w))) {
     priority = 'high';
-  } else if (['casual', 'whenever', 'low priority'].some((w) => textLower.includes(w))) {
+  } else if (lowKeywords.some((w) => textLower.includes(w))) {
     priority = 'low';
   }
 
@@ -396,32 +486,42 @@ export const api = {
       console.warn('Backend API unreachable for audio transcription, trying client-side APIs:', e);
     }
 
-    // 2. Try client-side Groq Whisper API if key is saved in localStorage
-    const groqKey = localStorage.getItem('groq_api_key');
-    if (groqKey && groqKey.length > 15) {
+    // 2. Try client-side Gemini Multimodal Audio API if key is saved in localStorage
+    const geminiKey = localStorage.getItem('gemini_api_key');
+    if (geminiKey && geminiKey.length > 15 && !geminiKey.startsWith('AIzaSyDXYy')) {
       try {
-        const formData = new FormData();
-        formData.append('file', audioBlob, getAudioFilename(audioBlob.type));
-        formData.append('model', 'whisper-large-v3-turbo');
-        formData.append('response_format', 'json');
-        if (language && language !== 'auto' && language !== 'hinglish') {
-          formData.append('language', language.split('-')[0]);
-        }
+        const base64Audio = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const resStr = reader.result as string;
+            resolve(resStr.split(',')[1] || '');
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(audioBlob);
+        });
 
-        const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${groqKey}` },
-          body: formData,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { inline_data: { mime_type: audioBlob.type || 'audio/webm', data: base64Audio } },
+                { text: 'Transcribe this audio recording accurately word for word in its original language (Hindi, Punjabi, Hinglish, English, etc.). Output ONLY the raw transcript text with no extra commentary or quotes.' }
+              ]
+            }]
+          })
         });
 
         if (res.ok) {
           const data = await res.json();
-          if (data.text) {
-            return await this.processVoiceText(data.text);
+          const transcriptText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (transcriptText) {
+            return await this.processVoiceText(transcriptText);
           }
         }
       } catch (err) {
-        console.warn('Client-side Groq Whisper API failed:', err);
+        console.warn('Client-side Gemini audio transcription failed:', err);
       }
     }
 
@@ -450,42 +550,32 @@ export const api = {
       }
     }
 
-    // 4. Try client-side Gemini Multimodal Audio API if key is saved in localStorage
-    const geminiKey = localStorage.getItem('gemini_api_key');
-    if (geminiKey && geminiKey.length > 15 && !geminiKey.startsWith('AIzaSyDXYy')) {
+    // 4. Try client-side Groq Whisper API if key is saved in localStorage
+    const groqKey = localStorage.getItem('groq_api_key');
+    if (groqKey && groqKey.length > 15) {
       try {
-        const base64Audio = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const resStr = reader.result as string;
-            resolve(resStr.split(',')[1] || '');
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(audioBlob);
-        });
+        const formData = new FormData();
+        formData.append('file', audioBlob, getAudioFilename(audioBlob.type));
+        formData.append('model', 'whisper-large-v3-turbo');
+        formData.append('response_format', 'json');
+        if (language && language !== 'auto' && language !== 'hinglish') {
+          formData.append('language', language.split('-')[0]);
+        }
 
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+        const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                { inline_data: { mime_type: audioBlob.type || 'audio/webm', data: base64Audio } },
-                { text: 'Transcribe this audio recording accurately word for word.' }
-              ]
-            }]
-          })
+          headers: { Authorization: `Bearer ${groqKey}` },
+          body: formData,
         });
 
         if (res.ok) {
           const data = await res.json();
-          const transcriptText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (transcriptText) {
-            return await this.processVoiceText(transcriptText);
+          if (data.text) {
+            return await this.processVoiceText(data.text);
           }
         }
       } catch (err) {
-        console.warn('Client-side Gemini audio transcription failed:', err);
+        console.warn('Client-side Groq Whisper API failed:', err);
       }
     }
 

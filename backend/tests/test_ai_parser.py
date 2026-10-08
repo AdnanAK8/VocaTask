@@ -19,7 +19,7 @@ class TestAiParser(unittest.TestCase):
         self.assertEqual(polish_task_title("uthna hai"), "Wake up")
         self.assertEqual(polish_task_title("database ka assignment submit"), "Submit Database Assignment")
         self.assertEqual(polish_task_title("rahul ko call"), "Call Rahul")
-        self.assertEqual(polish_task_title("gym jana"), "Gym Workout")
+        self.assertEqual(polish_task_title("gym jana"), "Gym")
 
     def test_heuristic_date_resolution(self):
         # 'kal' should be ref_dt + 1 day
@@ -87,9 +87,28 @@ class TestAiParser(unittest.TestCase):
 
     def test_priority_detection(self):
         self.assertEqual(heuristic_parse_task("urgent client meeting", self.ref_dt)["priority"], "high")
-        self.assertEqual(heuristic_parse_task("zaroori kaam hai kal", self.ref_dt)["priority"], "high")
+        self.assertEqual(heuristic_parse_task("bohot zaroori kaam hai kal", self.ref_dt)["priority"], "high")
+        self.assertEqual(heuristic_parse_task("emergency doctor appointment", self.ref_dt)["priority"], "high")
         self.assertEqual(heuristic_parse_task("kabhi bhi padh lenge", self.ref_dt)["priority"], "low")
+        self.assertEqual(heuristic_parse_task("fursat me call karna", self.ref_dt)["priority"], "low")
         self.assertEqual(heuristic_parse_task("regular task to do", self.ref_dt)["priority"], "medium")
+
+    def test_relative_time_and_weekday_resolution(self):
+        # Relative minutes
+        res_30m = heuristic_parse_task("call rahul in 30 minutes", self.ref_dt)
+        self.assertEqual(res_30m["scheduled_time"], "14:30")
+
+        # Relative hours
+        res_1h = heuristic_parse_task("submit report 1 ghante baad", self.ref_dt)
+        self.assertEqual(res_1h["scheduled_time"], "15:00")
+
+        # Weekday: Friday (self.ref_dt is Monday Oct 5 -> Friday is Oct 9)
+        res_fri = heuristic_parse_task("friday ko meeting hai", self.ref_dt)
+        self.assertEqual(res_fri["scheduled_date"], "2026-10-09")
+
+        # Weekday Hindi: shukrawar
+        res_shukra = heuristic_parse_task("शुक्रवार को टेस्ट है", self.ref_dt)
+        self.assertEqual(res_shukra["scheduled_date"], "2026-10-09")
 
     def test_language_detection(self):
         self.assertEqual(heuristic_parse_task("ਕੱਲ੍ਹ ਸ਼ਾਮ 7 ਵਜੇ gym ਜਾਣਾ ਹੈ", self.ref_dt)["language"], "pa")

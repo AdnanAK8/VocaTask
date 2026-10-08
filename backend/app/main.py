@@ -38,8 +38,9 @@ async def health_check():
         "status": "ok",
         "service": settings.PROJECT_NAME,
         "version": settings.VERSION,
+        "gemini_configured": bool(settings.effective_gemini_key),
         "groq_configured": bool(settings.GROQ_API_KEY),
-        "openai_configured": bool(settings.OPENAI_API_KEY)
+        "openai_configured": bool(settings.effective_openai_key)
     }
 
 @app.get("/", tags=["Root"])

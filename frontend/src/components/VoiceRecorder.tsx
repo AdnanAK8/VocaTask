@@ -134,7 +134,14 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
     // 1. Obtain Microphone Audio Stream & Setup MediaRecorder
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const audioConstraints: MediaTrackConstraints = {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 44100,
+          channelCount: 1,
+        };
+        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
         mediaStreamRef.current = stream;
 
         // Choose supported MIME type
@@ -196,7 +203,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
       return;
     }
 
-    // 2. Setup Web Speech API for Real-time Text Feedback
+    // 2. Setup Web Speech API for Real-time Visual Text Feedback Preview
     const extWin = window as unknown as ExtendedWindow;
     const SpeechRec = extWin.SpeechRecognition || extWin.webkitSpeechRecognition;
 
@@ -250,7 +257,14 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
     setRecordingSeconds(0);
 
     timerRef.current = window.setInterval(() => {
-      setRecordingSeconds((prev) => prev + 1);
+      setRecordingSeconds((prev) => {
+        if (prev >= 45) {
+          // Auto-stop after 45 seconds of continuous recording
+          window.setTimeout(() => stopRecording(), 0);
+          return prev;
+        }
+        return prev + 1;
+      });
     }, 1000);
   };
 
@@ -302,25 +316,36 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
     const recognitionError = speechRecognitionErrorRef.current;
 
     try {
-      // Option A: If live Speech Recognition picked up text, process text directly
-      if (spokenText.length >= 2) {
-        const task = await api.processVoiceText(spokenText);
-        onTaskExtracted(task);
+      // Primary: Send audio to Cloud Speech-to-Text (Gemini / Whisper) -> Gemini Task Structuring
+      if (recordedBlob && recordedBlob.size > 200) {
+        setLiveTranscript('Cloud AI transcribing audio speech & structuring task...');
+        try {
+          const task = await api.processVoiceAudio(recordedBlob, selectedLang);
+          onTaskExtracted(task);
+          return;
+        } catch (audioErr) {
+          console.warn('Cloud audio transcription error, trying text fallback:', audioErr);
+          // If cloud audio fails but local speech recognition captured text, fallback to text
+          if (spokenText.length >= 2) {
+            const task = await api.processVoiceText(spokenText);
+            onTaskExtracted(task);
+            return;
+          }
+          throw audioErr;
+        }
       }
-      // Option B: If speech text is empty but audio blob exists, upload audio to backend / AI Whisper
-      else if (recordedBlob && recordedBlob.size > 500) {
-        setLiveTranscript('AI transcribing recorded voice...');
-        const task = await api.processVoiceAudio(recordedBlob, selectedLang);
+      // Secondary: If recorded blob was empty but speech recognition had text
+      else if (spokenText.length >= 2) {
+        setLiveTranscript('AI structuring task...');
+        const task = await api.processVoiceText(spokenText);
         onTaskExtracted(task);
       } else {
         if (maxVolumeRef.current < 5) {
-          setErrorMsg('No sound detected from microphone. Please check your mic volume or type your task prompt below.');
+          setErrorMsg('No sound detected from microphone. Please ensure your microphone is unmuted and speak clearly.');
         } else if (recognitionError === 'not-allowed' || recognitionError === 'service-not-allowed') {
-          setErrorMsg('Browser speech recognition was blocked. Check browser permissions and network access, or type your task.');
-        } else if (recognitionError === 'network') {
-          setErrorMsg('Browser speech recognition could not reach its recognition service. Check your internet connection or type your task.');
+          setErrorMsg('Microphone/speech recognition was blocked. Please check browser permissions.');
         } else {
-          setErrorMsg('No clear speech was recognized. Speak closer to the microphone, check the selected language, or type your task.');
+          setErrorMsg('No clear speech was captured. Please speak closer to the mic, or type your task below.');
         }
         setShowTextInput(true);
       }

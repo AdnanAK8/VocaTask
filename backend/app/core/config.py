@@ -25,7 +25,25 @@ class Settings(BaseSettings):
     
     # SQLite Database for lightweight local persistent storage
     DATABASE_PATH: str = "tasks.db"
-    
+
+    @property
+    def effective_gemini_key(self) -> str:
+        """Returns the Gemini API key if configured and not an OpenAI sk- key."""
+        if self.GEMINI_API_KEY and not self.GEMINI_API_KEY.startswith("sk-"):
+            return self.GEMINI_API_KEY.strip()
+        if self.OPENAI_API_KEY and self.OPENAI_API_KEY.startswith("AIzaSy"):
+            return self.OPENAI_API_KEY.strip()
+        return ""
+
+    @property
+    def effective_openai_key(self) -> str:
+        """Returns the OpenAI API key if configured or if an sk- key was entered in GEMINI_API_KEY."""
+        if self.OPENAI_API_KEY and (self.OPENAI_API_KEY.startswith("sk-") or len(self.OPENAI_API_KEY) > 20):
+            return self.OPENAI_API_KEY.strip()
+        if self.GEMINI_API_KEY and self.GEMINI_API_KEY.startswith("sk-"):
+            return self.GEMINI_API_KEY.strip()
+        return ""
+
     class Config:
         env_file = ".env"
         extra = "ignore"

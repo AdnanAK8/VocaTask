@@ -98,5 +98,66 @@ class TestVoiceEndpoints(unittest.TestCase):
         self.assertEqual(json_data["scheduled_time"], "10:00")
         self.assertIn("Submit Database Assignment", json_data["title"])
 
+    @patch("app.api.voice.transcribe_audio_file", new_callable=AsyncMock)
+    @patch("google.genai.Client")
+    def test_process_audio_with_gemini_cloud_stt(self, mock_genai_cls, mock_transcribe):
+        # Simulate Cloud Speech-to-Text producing transcribed text from spoken audio
+        mock_transcribe.return_value = "Kal shaam 7 baje gym jana hai bohot zaroori hai"
+
+        # Mock Gemini structured JSON response
+        mock_client = mock_genai_cls.return_value
+        mock_response = unittest.mock.MagicMock()
+        mock_response.text = '{"title": "Gym Workout", "description": "Going to gym", "scheduled_date": "2026-10-09", "scheduled_time": "19:00", "priority": "high", "category": "health", "reminder_required": true, "language": "hinglish"}'
+        mock_client.models.generate_content.return_value = mock_response
+
+        dummy_audio = b"\x1a\x45\xdf\xa3webm-test-audio-bytes"
+        files = {"file": ("voice_recording.webm", dummy_audio, "audio/webm")}
+        data = {"user_timezone": "Asia/Kolkata", "language": "hinglish"}
+        headers = {"X-Gemini-Key": "AIzaSyTestGeminiValidKeyMock12345678"}
+
+        res = self.client.post("/api/voice/process-audio", files=files, data=data, headers=headers)
+        self.assertEqual(res.status_code, 200)
+        json_data = res.json()
+        # Verifies audio -> cloud transcribed text -> AI structured task
+        self.assertEqual(json_data["original_transcript"], "Kal shaam 7 baje gym jana hai bohot zaroori hai")
+        self.assertEqual(json_data["category"], "health")
+        self.assertEqual(json_data["scheduled_time"], "19:00")
+        self.assertEqual(json_data["priority"], "high")
+        self.assertIn("Gym", json_data["title"])
+
+    def test_improved_metrics_priority_and_time(self):
+        # Test urgent task priority detection
+        res1 = self.client.post("/api/voice/process-text", json={
+            "text": "Emergency doctor appointment tomorrow at 11 AM",
+            "user_timezone": "Asia/Kolkata"
+        })
+        self.assertEqual(res1.status_code, 200)
+        d1 = res1.json()
+        self.assertEqual(d1["priority"], "high")
+        self.assertEqual(d1["category"], "health")
+        self.assertEqual(d1["scheduled_time"], "11:00")
+        self.assertEqual(d1["title"], "Visit Doctor")
+
+        # Test low priority casual task
+        res2 = self.client.post("/api/voice/process-text", json={
+            "text": "Call mom tomorrow evening whenever free casual",
+            "user_timezone": "Asia/Kolkata"
+        })
+        self.assertEqual(res2.status_code, 200)
+        d2 = res2.json()
+        self.assertEqual(d2["priority"], "low")
+        self.assertEqual(d2["title"], "Call Mom")
+
+        # Test finance bill payment
+        res3 = self.client.post("/api/voice/process-text", json={
+            "text": "Bijli ka bill pay karna hai kal shaam 6 baje",
+            "user_timezone": "Asia/Kolkata"
+        })
+        self.assertEqual(res3.status_code, 200)
+        d3 = res3.json()
+        self.assertEqual(d3["category"], "finance")
+        self.assertEqual(d3["scheduled_time"], "18:00")
+        self.assertIn("Pay", d3["title"])
+
 if __name__ == "__main__":
     unittest.main()
