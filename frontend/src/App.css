@@ -6,15 +6,15 @@
 /* ---------- Design Tokens ---------- */
 
 :root {
-  --bg: #faf7f2;
+  --bg: #f7f8f5;
   --card: #ffffff;
-  --text: #2b2927;
-  --muted: #78716c;
-  --border: #e7e1da;
+  --text: #252b28;
+  --muted: #66716b;
+  --border: #e1e7e2;
 
-  --primary: #4a6b5d;
-  --primary-dark: #3d594e;
-  --primary-light: #e8f0ec;
+  --primary: #4b6b5b;
+  --primary-dark: #395747;
+  --primary-light: #e9f0eb;
 
   --urgent: #e06d53;
   --urgent-light: #fbe9e4;
@@ -77,11 +77,11 @@ body {
 .simple-header,
 .header {
   width: 100%;
-  min-height: 74px;
+  min-height: 68px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 6%;
+  padding: 12px max(24px, calc((100% - 1080px) / 2));
   border-bottom: 1px solid rgba(231, 225, 218, 0.8);
   background: rgba(250, 247, 242, 0.94);
 }
@@ -89,7 +89,16 @@ body {
 .brand {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 10px;
+  text-decoration: none;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex: 0 0 auto;
 }
 
 .brand-mark {
@@ -135,29 +144,28 @@ body {
 ========================================================= */
 
 .main {
-  width: min(100%, 850px);
+  width: min(100%, 760px);
   margin: 0 auto;
-  padding: 52px 24px 130px;
+  padding: 42px 24px 130px;
 }
 
 .welcome {
-  margin-bottom: 30px;
+  margin-bottom: 22px;
 }
 
 .greeting {
   margin: 0 0 8px;
   color: var(--primary);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 650;
 }
 
-.welcome h2 {
+.welcome h1 {
   margin: 0;
   color: var(--text);
-  font-size: clamp(32px, 5vw, 48px);
-  line-height: 1.08;
-  letter-spacing: -0.045em;
-  font-weight: 760;
+  font-size: 34px;
+  line-height: 1.16;
+  font-weight: 720;
 }
 
 /* =========================================================
@@ -166,11 +174,11 @@ body {
 
 .voice-card {
   width: 100%;
-  min-height: 132px;
+  min-height: 108px;
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 24px;
+  gap: 18px;
+  padding: 20px 22px;
   border: 1px solid #d9e3dd;
   border-radius: var(--radius-lg);
   background: var(--card);
@@ -194,9 +202,9 @@ body {
 }
 
 .voice-mic {
-  width: 62px;
-  height: 62px;
-  flex: 0 0 62px;
+  width: 54px;
+  height: 54px;
+  flex: 0 0 54px;
   display: grid;
   place-items: center;
   border-radius: 18px;
@@ -220,7 +228,7 @@ body {
 }
 
 .voice-content strong {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 720;
 }
 
@@ -236,8 +244,9 @@ body {
 }
 
 .voice-arrow {
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -256,7 +265,7 @@ body {
 ========================================================= */
 
 .tasks-section {
-  margin-top: 48px;
+  margin-top: 34px;
 }
 
 .section-heading {
@@ -267,11 +276,10 @@ body {
   margin-bottom: 16px;
 }
 
-.section-heading h3 {
+.section-heading h2 {
   margin: 0 0 4px;
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 740;
-  letter-spacing: -0.02em;
 }
 
 .section-heading p {
@@ -293,16 +301,73 @@ body {
 .task-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+}
+
+.task-list-panel {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.64);
+}
+
+.task-filters {
+  display: flex;
+  gap: 5px;
+  padding: 3px;
+  margin-bottom: 10px;
+  border: 1px solid #e9ede9;
+  border-radius: 11px;
+  background: #f4f6f3;
+}
+
+.task-filters button {
+  min-width: 0;
+  min-height: 36px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.task-filters button.active {
+  background: white;
+  color: var(--primary-dark);
+  box-shadow: 0 1px 3px rgba(37, 43, 40, 0.1);
+}
+
+.task-filters button span {
+  min-width: 20px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: #edf0ed;
+  color: #55635b;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.task-filters button.active span {
+  background: var(--primary-light);
+  color: var(--primary-dark);
 }
 
 .task-card {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 14px;
-  min-height: 82px;
-  padding: 16px 18px;
+  gap: 12px;
+  min-height: 72px;
+  padding: 13px 15px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--card);
@@ -457,11 +522,16 @@ body {
 
 .manual-add {
   width: 100%;
-  margin-top: 13px;
-  padding: 13px;
-  border: 1px dashed #cfc7bf;
+  min-height: 46px;
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid #dce4de;
   border-radius: 12px;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.68);
   color: var(--primary);
   font-size: 13px;
   font-weight: 650;
@@ -473,10 +543,8 @@ body {
   background: var(--primary-light);
 }
 
-.manual-add span {
-  margin-right: 7px;
-  font-size: 18px;
-  vertical-align: -1px;
+.manual-add svg {
+  flex: 0 0 auto;
 }
 
 .completed-summary {
@@ -499,10 +567,10 @@ body {
   transform: translateX(50%);
   width: min(calc(100% - 28px), 570px);
   height: 68px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1fr);
   align-items: center;
-  justify-content: space-around;
-  padding: 7px 10px;
+  padding: 7px 12px;
   border: 1px solid rgba(231, 225, 218, 0.95);
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.96);
@@ -511,7 +579,8 @@ body {
 }
 
 .nav-item {
-  min-width: 82px;
+  width: 100%;
+  min-width: 0;
   height: 52px;
   display: flex;
   flex-direction: column;
@@ -540,12 +609,15 @@ body {
 .nav-add {
   width: 48px;
   height: 48px;
+  justify-self: center;
+  display: grid;
+  place-items: center;
+  padding: 0;
   border: 0;
   border-radius: 15px;
   background: var(--primary);
   color: white;
-  font-size: 27px;
-  line-height: 1;
+  line-height: 0;
   box-shadow: 0 7px 17px rgba(74, 107, 93, 0.24);
   transition: transform 0.18s ease;
 }
@@ -589,6 +661,10 @@ body {
 .icon-button {
   width: 40px;
   height: 40px;
+  flex: 0 0 40px;
+  display: grid;
+  place-items: center;
+  padding: 0;
   border: 1px solid var(--border);
   border-radius: 50%;
   background: white;
@@ -1142,27 +1218,27 @@ body {
   .simple-header,
   .header {
     min-height: 66px;
-    padding: 14px 18px;
+    padding: 12px 16px;
   }
 
   .main {
-    padding: 36px 16px 120px;
+    padding: 32px 16px 120px;
   }
 
-  .welcome h2 {
-    font-size: 34px;
+  .welcome h1 {
+    font-size: 31px;
   }
 
   .voice-card {
-    min-height: 116px;
-    padding: 18px;
-    gap: 14px;
+    min-height: 102px;
+    padding: 16px;
+    gap: 12px;
   }
 
   .voice-mic {
-    width: 54px;
-    height: 54px;
-    flex-basis: 54px;
+    width: 48px;
+    height: 48px;
+    flex-basis: 48px;
   }
 
   .voice-content strong {
@@ -1184,12 +1260,12 @@ body {
   }
 
   .tasks-section {
-    margin-top: 38px;
+    margin-top: 30px;
   }
 
   .task-card {
     align-items: flex-start;
-    padding: 15px;
+    padding: 13px 12px;
   }
 
   .task-check {
@@ -1224,11 +1300,17 @@ body {
   .bottom-nav {
     bottom: 10px;
     width: calc(100% - 20px);
-    height: 64px;
+    height: 66px;
+    grid-template-columns: minmax(0, 1fr) 60px minmax(0, 1fr);
   }
 
   .nav-item {
-    min-width: 65px;
+    min-width: 0;
+  }
+
+  .nav-add {
+    width: 48px;
+    height: 48px;
   }
 
   .recording-content,
@@ -1286,8 +1368,8 @@ body {
     border-radius: 10px;
   }
 
-  .welcome h2 {
-    font-size: 30px;
+  .welcome h1 {
+    font-size: 29px;
   }
 
   .voice-card {
@@ -1300,6 +1382,24 @@ body {
 
   .section-heading {
     align-items: center;
+  }
+
+  .task-list-panel {
+    padding: 8px;
+  }
+
+  .task-filters {
+    gap: 2px;
+  }
+
+  .task-filters button {
+    gap: 4px;
+    padding: 0 4px;
+    font-size: 11px;
+  }
+
+  .task-filters button span {
+    min-width: 18px;
   }
 
   .recording-actions,
@@ -1695,4 +1795,4 @@ select:focus-visible {
     left: 14px;
     width: auto;
   }
-}
+}

@@ -1,12 +1,12 @@
 {
-  "name": "VoiceTasks AI - Multilingual Voice Task Manager",
-  "short_name": "VoiceTasks",
+  "name": "VocaTask - Voice Task Manager",
+  "short_name": "VocaTask",
   "description": "Speak naturally in English, Hindi, Punjabi, or Hinglish to automatically create and schedule organized tasks with Cloud AI.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#090d16",
-  "theme_color": "#4f46e5",
+  "background_color": "#f7f8f5",
+  "theme_color": "#4b6b5b",
   "icons": [
     {
       "src": "/icons/pwa-192x192.png",

@@ -27,7 +27,7 @@ export const Header: React.FC<HeaderProps> = ({ onInstallClick, canInstall, onOp
           </div>
           <div>
             <h1 className="text-lg font-bold tracking-tight text-white flex items-center gap-1.5">
-              VoiceTasks <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">AI</span>
+              VocaTask <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">AI</span>
             </h1>
             <p className="text-xs text-slate-400">
               {greeting}, <span className="text-slate-200 font-medium">Sarab</span> 👋

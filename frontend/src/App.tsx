@@ -31,6 +31,8 @@ const emptyForm: TaskFormValues = {
   reminder_required: true,
 };
 
+type TaskFilter = 'all' | 'upcoming' | 'completed';
+
 const formatDate = (value?: string | null): string => {
   if (!value) return 'No date';
   const parsed = new Date(`${value}T00:00:00`);
@@ -59,6 +61,7 @@ export const App = () => {
   const [form, setForm] = useState<TaskFormValues>(emptyForm);
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [taskFilter, setTaskFilter] = useState<TaskFilter>('all');
   const [today] = useState(() => new Date().toLocaleDateString(undefined, {
     weekday: 'long', month: 'long', day: 'numeric',
   }));
@@ -218,15 +221,20 @@ export const App = () => {
 
   const pendingCount = tasks.filter((task) => task.status === 'pending').length;
   const completedCount = tasks.length - pendingCount;
+  const visibleTasks = tasks.filter((task) => {
+    if (taskFilter === 'upcoming') return task.status === 'pending';
+    if (taskFilter === 'completed') return task.status === 'completed';
+    return true;
+  });
 
   return (
     <div className="app-shell">
       <header className="header">
-        <a className="brand" href="#tasks" aria-label="VoiceTasks home">
+        <a className="brand" href="#tasks" aria-label="VocaTask home">
           <span className="brand-mark">V</span>
-          <span>VoiceTasks</span>
+          <span>VocaTask</span>
         </a>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="header-actions">
           <button
             className="icon-button header-notifications"
             onClick={handleHeaderNotificationClick}
@@ -243,7 +251,7 @@ export const App = () => {
             className="icon-button header-install"
             onClick={() => window.dispatchEvent(new CustomEvent('open-install-pwa'))}
             aria-label="Install App"
-            title="Install VoiceTasks App"
+            title="Install VocaTask App"
           >
             <Download size={18} />
           </button>
@@ -269,6 +277,10 @@ export const App = () => {
           <span className="voice-arrow"><ChevronRight size={21} /></span>
         </button>
 
+        <button className="manual-add" onClick={() => openTaskForm()}>
+          <Plus size={17} /> Add new task
+        </button>
+
         <section className="tasks-section" aria-labelledby="tasks-heading">
           <div className="section-heading">
             <div>
@@ -278,14 +290,26 @@ export const App = () => {
             <span>{pendingCount} {pendingCount === 1 ? 'task' : 'tasks'} left</span>
           </div>
 
-          <div className="task-list">
-            {tasks.length === 0 ? (
+          <div className="task-list-panel">
+            <div className="task-filters" role="tablist" aria-label="Filter tasks">
+              <button className={taskFilter === 'all' ? 'active' : ''} onClick={() => setTaskFilter('all')} role="tab" aria-selected={taskFilter === 'all'}>
+                All <span>{tasks.length}</span>
+              </button>
+              <button className={taskFilter === 'upcoming' ? 'active' : ''} onClick={() => setTaskFilter('upcoming')} role="tab" aria-selected={taskFilter === 'upcoming'}>
+                Upcoming <span>{pendingCount}</span>
+              </button>
+              <button className={taskFilter === 'completed' ? 'active' : ''} onClick={() => setTaskFilter('completed')} role="tab" aria-selected={taskFilter === 'completed'}>
+                Completed <span>{completedCount}</span>
+              </button>
+            </div>
+            <div className="task-list" role="tabpanel">
+            {visibleTasks.length === 0 ? (
               <div className="empty-state">
                 <span className="empty-icon"><Check size={22} /></span>
-                <h3>A little room to breathe</h3>
-                <p>Your tasks will show up here. Add one by voice or enter it yourself.</p>
+                <h3>{tasks.length === 0 ? 'A little room to breathe' : 'Nothing here yet'}</h3>
+                <p>{tasks.length === 0 ? 'Your tasks will show up here. Add one by voice or enter it yourself.' : 'Tasks matching this filter will appear here.'}</p>
               </div>
-            ) : tasks.map((task) => (
+            ) : visibleTasks.map((task) => (
               <article className={`task-card ${task.status === 'completed' ? 'completed' : ''}`} key={task.id}>
                 <button
                   className={`task-check ${task.status === 'completed' ? 'checked' : ''}`}
@@ -318,11 +342,9 @@ export const App = () => {
                 </div>
               </article>
             ))}
+            </div>
           </div>
 
-          <button className="manual-add" onClick={() => openTaskForm()}>
-            <Plus size={17} /> Add task manually
-          </button>
           {completedCount > 0 && <p className="completed-summary">{completedCount} {completedCount === 1 ? 'task' : 'tasks'} completed</p>}
         </section>
       </main>
