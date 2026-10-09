@@ -1,4 +1,15 @@
+# Environment and secret files (never commit API keys or credentials)
+.env
+.env.*
+*.env
 backend/.env
+backend/.env.*
+frontend/.env
+frontend/.env.*
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+
 backend/*.db
 backend/__pycache__/
 backend/**/__pycache__/

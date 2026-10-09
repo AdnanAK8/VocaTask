@@ -3,11 +3,26 @@ from typing import List
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
 
-# Ensure local backend/.env values take precedence over stale operating system environment variables
-_env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env")
-if os.path.exists(_env_path):
-    load_dotenv(_env_path, override=True)
-else:
+# Search for environment variables and secrets in hierarchical order:
+# 1. Custom explicit path: VOICETASKS_ENV_FILE
+# 2. Secure user-profile location outside repository: ~/.voicetasks.env
+# 3. Local backend/.env (standard local dev fallback)
+# 4. Project root .env
+_possible_env_paths = [
+    os.environ.get("VOICETASKS_ENV_FILE", ""),
+    os.path.expanduser("~/.voicetasks.env"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), ".env"),
+]
+
+_env_loaded = False
+for _path in _possible_env_paths:
+    if _path and os.path.isfile(_path):
+        load_dotenv(_path, override=True)
+        _env_loaded = True
+        break
+
+if not _env_loaded:
     load_dotenv(override=True)
 
 class Settings(BaseSettings):
