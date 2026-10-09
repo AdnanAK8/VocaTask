@@ -5,14 +5,14 @@ from pydantic_settings import BaseSettings
 
 # Search for environment variables and secrets in hierarchical order:
 # 1. Custom explicit path: VOICETASKS_ENV_FILE
-# 2. Secure user-profile location outside repository: ~/.voicetasks.env
-# 3. Local backend/.env (standard local dev fallback)
-# 4. Project root .env
+# 2. Local backend/.env (Standard team location when cloning repo)
+# 3. Project root .env
+# 4. User-profile location: ~/.voicetasks.env
 _possible_env_paths = [
     os.environ.get("VOICETASKS_ENV_FILE", ""),
-    os.path.expanduser("~/.voicetasks.env"),
     os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"),
     os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), ".env"),
+    os.path.expanduser("~/.voicetasks.env"),
 ]
 
 _env_loaded = False
