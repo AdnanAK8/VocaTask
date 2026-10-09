@@ -22,7 +22,8 @@ app = FastAPI(
 # Enable CORS for cross-origin requests from PWA running locally or in production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

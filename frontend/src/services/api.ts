@@ -29,12 +29,14 @@ const getCustomKeyHeaders = (): Record<string, string> => {
   const headers: Record<string, string> = {
     'X-User-Timezone': getUserTimezone(),
   };
-  const groq = localStorage.getItem('groq_api_key');
-  if (groq) headers['X-Groq-Key'] = groq;
-  const gemini = localStorage.getItem('gemini_api_key');
-  if (gemini) headers['X-Gemini-Key'] = gemini;
-  const openai = localStorage.getItem('openai_api_key');
-  if (openai) headers['X-OpenAI-Key'] = openai;
+  const groq = localStorage.getItem('groq_api_key')?.trim();
+  if (groq && groq.startsWith('gsk_') && groq.length > 20) headers['X-Groq-Key'] = groq;
+  const gemini = localStorage.getItem('gemini_api_key')?.trim();
+  if (gemini && (gemini.startsWith('AIzaSy') || gemini.startsWith('AQ.')) && !gemini.startsWith('AIzaSyDXYy') && gemini.length > 20) {
+    headers['X-Gemini-Key'] = gemini;
+  }
+  const openai = localStorage.getItem('openai_api_key')?.trim();
+  if (openai && openai.startsWith('sk-') && openai.length > 20) headers['X-OpenAI-Key'] = openai;
   return headers;
 };
 

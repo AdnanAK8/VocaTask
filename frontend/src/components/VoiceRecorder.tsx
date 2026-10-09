@@ -51,7 +51,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
   const [showTextInput, setShowTextInput] = useState(false);
   const [typedText, setTypedText] = useState('');
   const [selectedLang, setSelectedLang] = useState<string>(
-    localStorage.getItem('speech_lang') || 'en-IN'
+    localStorage.getItem('speech_lang') || 'auto'
   );
 
   const timerRef = useRef<number | null>(null);
@@ -70,10 +70,22 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
   const maxVolumeRef = useRef<number>(0);
 
   const languages = [
+    { code: 'auto', label: '🌐 Auto-detect language' },
     { code: 'en-IN', label: '🇮🇳 Hinglish / English (India)' },
     { code: 'hi-IN', label: '🇮🇳 Hindi (हिंदी)' },
     { code: 'pa-IN', label: '🌾 Punjabi (ਪੰਜਾਬੀ)' },
-    { code: 'en-US', label: '🌐 English (Global)' },
+    { code: 'en-US', label: '🇺🇸 English (US)' },
+    { code: 'es-ES', label: '🇪🇸 Spanish' },
+    { code: 'fr-FR', label: '🇫🇷 French' },
+    { code: 'de-DE', label: '🇩🇪 German' },
+    { code: 'it-IT', label: '🇮🇹 Italian' },
+    { code: 'pt-BR', label: '🇧🇷 Portuguese' },
+    { code: 'ar-SA', label: '🇸🇦 Arabic' },
+    { code: 'bn-BD', label: '🇧🇩 Bengali' },
+    { code: 'ur-PK', label: '🇵🇰 Urdu' },
+    { code: 'zh-CN', label: '🇨🇳 Chinese' },
+    { code: 'ja-JP', label: '🇯🇵 Japanese' },
+    { code: 'ru-RU', label: '🇷🇺 Russian' },
   ];
 
   const handleLangChange = (code: string) => {
@@ -131,27 +143,31 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
 
     let stream: MediaStream | null = null;
 
-    // 1. Obtain Microphone Audio Stream & Setup MediaRecorder
-    try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const audioConstraints: MediaTrackConstraints = {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: 44100,
-          channelCount: 1,
-        };
-        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
-        mediaStreamRef.current = stream;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setErrorMsg(window.isSecureContext
+        ? 'This browser cannot access a microphone. Try a current version of Chrome, Edge, or Safari, or type your task.'
+        : 'Microphone access requires a secure connection. Open this app over HTTPS or localhost, then allow microphone access.');
+      setShowTextInput(true);
+      return;
+    }
 
-        // Choose supported MIME type
-        let mimeType = '';
-        if (typeof MediaRecorder !== 'undefined') {
+    // 1. Obtain microphone audio for accurate multilingual transcription.
+    try {
+      const audioConstraints: MediaTrackConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      };
+      stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+      mediaStreamRef.current = stream;
+
+      if (typeof MediaRecorder !== 'undefined') {
+        try {
+          let mimeType = '';
           if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
           else if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
           else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
           else if (MediaRecorder.isTypeSupported('audio/ogg')) mimeType = 'audio/ogg';
-
           const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
           mediaRecorder.ondataavailable = (event) => {
             if (event.data && event.data.size > 0) {
@@ -160,9 +176,13 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
           };
           mediaRecorder.start(250);
           mediaRecorderRef.current = mediaRecorder;
+        } catch (err) {
+          console.warn('Audio recording is unavailable; trying browser speech recognition:', err);
         }
+      }
 
-        // Setup AudioContext & AnalyserNode for volume visualizer & gain check
+      // A visualizer failure should not prevent microphone recording.
+      try {
         const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         if (AudioCtx) {
           const audioCtx = new AudioCtx();
@@ -189,14 +209,27 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
           };
           updateVolume();
         }
+      } catch (err) {
+        console.warn('Microphone visualizer unavailable:', err);
       }
     } catch (err) {
       console.warn('Microphone stream error:', err);
       const errorName = err instanceof Error ? err.name : '';
+      const failedRecorder = mediaRecorderRef.current as MediaRecorder | null;
+      if (failedRecorder && failedRecorder.state !== 'inactive') {
+        try {
+          failedRecorder.stop();
+        } catch {
+          // The stream cleanup below is sufficient if stopping fails.
+        }
+      }
+      cleanupAudioResources();
       const message = errorName === 'NotAllowedError' || errorName === 'SecurityError'
         ? 'Microphone access was denied. Allow microphone access for this site in your browser settings, then try again.'
         : errorName === 'NotFoundError'
           ? 'No microphone was found. Connect or enable a microphone, or type your task instead.'
+          : errorName === 'NotReadableError' || errorName === 'AbortError'
+            ? 'The microphone is busy or unavailable. Close other apps using it, check its mute switch, and try again.'
           : 'Could not access the microphone. Check that it is connected, unmuted, and not being used by another app.';
       setErrorMsg(message);
       setShowTextInput(true);
@@ -212,7 +245,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
         const recognizer = new SpeechRec();
         recognizer.continuous = true;
         recognizer.interimResults = true;
-        recognizer.lang = selectedLang;
+        recognizer.lang = selectedLang === 'auto' ? navigator.language || 'en-US' : selectedLang;
         speechRecognitionEndedRef.current = new Promise<void>((resolve) => {
           resolveSpeechRecognitionEndedRef.current = resolve;
         });
@@ -248,6 +281,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
     }
 
     if (!mediaRecorderRef.current && !speechRecognizerRef.current) {
+      cleanupAudioResources();
       setErrorMsg('Voice recording is not supported in this browser. Try Chrome or Edge on a secure connection, or type your task.');
       setShowTextInput(true);
       return;
@@ -276,6 +310,12 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
       } catch {
         // Ignored
       }
+      if (speechRecognitionEndedRef.current) {
+        await Promise.race([
+          speechRecognitionEndedRef.current,
+          new Promise<void>((resolve) => window.setTimeout(resolve, 800)),
+        ]);
+      }
     }
 
     // 2. Stop MediaRecorder and finalize Audio Blob
@@ -284,15 +324,26 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
       try {
         const mediaRecorder = mediaRecorderRef.current;
         await new Promise<void>((resolve) => {
-          mediaRecorder.onstop = () => resolve();
-          mediaRecorder.stop();
+          const timeout = window.setTimeout(resolve, 1200);
+          mediaRecorder.onstop = () => {
+            window.clearTimeout(timeout);
+            resolve();
+          };
+          try {
+            mediaRecorder.stop();
+          } catch {
+            window.clearTimeout(timeout);
+            resolve();
+          }
         });
-        if (audioChunksRef.current.length > 0) {
-          recordedBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || 'audio/webm' });
-        }
       } catch (e) {
         console.warn('Error stopping MediaRecorder:', e);
       }
+    }
+    if (audioChunksRef.current.length > 0) {
+      recordedBlob = new Blob(audioChunksRef.current, {
+        type: mediaRecorderRef.current?.mimeType || 'audio/webm',
+      });
     }
 
     cleanupAudioResources();
@@ -304,17 +355,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
     const recognitionError = speechRecognitionErrorRef.current;
 
     try {
-      // 1. FAST ZERO-LATENCY PATH: If browser speech recognition already transcribed speech in real-time,
-      // extract the task directly from text! Instant, zero network audio delay, zero cloud STT overhead.
-      if (spokenText.length >= 2) {
-        setLiveTranscript(`Transcribed: "${spokenText}"`);
-        const task = await api.processVoiceText(spokenText);
-        onTaskExtracted(task);
-        return;
-      }
-
-      // 2. CLOUD AUDIO PATH: Only if browser speech recognition did not capture text (e.g. unsupported browser),
-      // upload the audio blob to server/cloud audio transcription.
+      // Prefer cloud audio transcription so it can detect languages beyond the browser locale.
       if (recordedBlob && recordedBlob.size > 200) {
         setLiveTranscript('Transcribing audio speech & structuring task...');
         try {
@@ -322,25 +363,26 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
           onTaskExtracted(task);
           return;
         } catch (audioErr) {
-          console.warn('Cloud audio transcription error, checking text fallback:', audioErr);
-          if (spokenText.length >= 2) {
-            const task = await api.processVoiceText(spokenText);
-            onTaskExtracted(task);
-            return;
-          }
-          throw audioErr;
+          console.warn('Audio transcription failed; checking browser transcript fallback:', audioErr);
+          if (spokenText.length < 2) throw audioErr;
         }
       }
-      else {
-        if (maxVolumeRef.current < 5) {
-          setErrorMsg('No sound detected from microphone. Please ensure your microphone is unmuted and speak clearly.');
-        } else if (recognitionError === 'not-allowed' || recognitionError === 'service-not-allowed') {
-          setErrorMsg('Microphone/speech recognition was blocked. Please check browser permissions.');
-        } else {
-          setErrorMsg('No clear speech was captured. Please speak closer to the mic, or type your task below.');
-        }
-        setShowTextInput(true);
+
+      if (spokenText.length >= 2) {
+        setLiveTranscript(`Transcribed: "${spokenText}"`);
+        const task = await api.processVoiceText(spokenText);
+        onTaskExtracted(task);
+        return;
       }
+
+      if (maxVolumeRef.current < 5) {
+        setErrorMsg('No sound detected from microphone. Check that it is unmuted and speak clearly.');
+      } else if (recognitionError === 'not-allowed' || recognitionError === 'service-not-allowed') {
+        setErrorMsg('Browser speech recognition was blocked and audio transcription was unavailable. Check microphone permissions or type your task.');
+      } else {
+        setErrorMsg('No clear speech was captured. Please speak closer to the mic, or type your task below.');
+      }
+      setShowTextInput(true);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to parse task';
       setErrorMsg(msg);

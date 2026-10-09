@@ -66,93 +66,93 @@ async def transcribe_audio_file(
         raw_groq = raw_openai
         raw_openai = ""
 
-    # 1. Try Gemini Multimodal Cloud Audio (Primary Cloud STT when Gemini key is configured)
-    if raw_gemini and len(raw_gemini) > 10 and not raw_gemini.startswith("AIzaSyDXYy"):
-        try:
-            from google import genai
-            from google.genai import types
-            client = genai.Client(api_key=raw_gemini)
+    # 1. Try Groq Whisper Cloud STT First (Blazing fast ~1.5s, specialized STT)
+    groq_candidates = [raw_groq, settings.effective_groq_key]
+    for g_key in groq_candidates:
+        if g_key and len(g_key) > 10:
+            try:
+                from groq import Groq
+                client = Groq(api_key=g_key, max_retries=1, timeout=8.0)
+                audio_file = (filename or "audio.webm", file_bytes)
 
-            prompt = (
-                "You are an expert multilingual audio speech-to-text engine. "
-                "Accurately transcribe every word spoken in this audio recording into text in its original spoken language "
-                "(English, Hindi, Punjabi, Hinglish, Spanish, etc.). "
-                "Preserve spoken dates, times, task names, numbers, and proper nouns. "
-                "Output ONLY the verbatim transcript text with no markdown formatting, explanations, or quotes."
-            )
+                kwargs = {
+                    "file": audio_file,
+                    "model": "whisper-large-v3-turbo",
+                    "response_format": "json",
+                    "temperature": 0.0,
+                }
+                if language and language not in ("auto", "hinglish"):
+                    clean_lang = language.split("-")[0]
+                    kwargs["language"] = clean_lang
 
-            # Try active Gemini models (gemini-3.5-flash / gemini-flash-lite-latest / gemini-2.0-flash)
-            models_to_try = ["gemini-3.5-flash", "gemini-flash-lite-latest", "gemini-2.0-flash", "gemini-1.5-flash"]
-            response = None
-            for g_model in models_to_try:
-                try:
-                    response = client.models.generate_content(
-                        model=g_model,
-                        contents=[
-                            types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
-                            prompt
-                        ]
-                    )
-                    if response and response.text:
-                        break
-                except Exception as e_m:
-                    logger.info(f"Gemini model {g_model} audio transcribe retry: {e_m}")
-                    continue
+                transcription = client.audio.transcriptions.create(**kwargs)
+                text = getattr(transcription, "text", str(transcription)).strip()
+                if text:
+                    logger.info("Successfully transcribed audio using Groq Whisper Cloud STT.")
+                    return text
+            except Exception as e:
+                logger.warning(f"Groq Whisper transcription failed, trying fallback: {e}")
 
-            text = response.text.strip() if response and response.text else ""
-            if text:
-                logger.info("Successfully transcribed audio using Google Gemini Multimodal Cloud STT.")
-                return text
-        except Exception as e:
-            logger.warning(f"Google Gemini audio transcription failed, attempting fallback: {e}")
+    # 2. Try Gemini Multimodal Cloud Audio (Fast fallback)
+    gemini_candidates = [raw_gemini, settings.effective_gemini_key]
+    for gem_key in gemini_candidates:
+        if gem_key and len(gem_key) > 10 and not gem_key.startswith("AIzaSyDXYy"):
+            try:
+                from google import genai
+                from google.genai import types
+                client = genai.Client(api_key=gem_key)
 
-    # 2. Try OpenAI Whisper Cloud STT
-    if raw_openai and len(raw_openai) > 10:
-        try:
-            from openai import OpenAI
-            client = OpenAI(api_key=raw_openai, max_retries=0, timeout=10.0)
-            audio_file = (filename or "audio.webm", file_bytes)
+                prompt = (
+                    "You are an expert multilingual audio speech-to-text engine. "
+                    "Accurately transcribe every word spoken in this audio recording into text in its original spoken language "
+                    "(English, Hindi, Punjabi, Hinglish, Spanish, etc.). "
+                    "Preserve spoken dates, times, task names, numbers, and proper nouns. "
+                    "Output ONLY the verbatim transcript text with no markdown formatting, explanations, or quotes."
+                )
 
-            kwargs = {
-                "file": audio_file,
-                "model": "whisper-1",
-            }
-            if language and language not in ("auto", "hinglish"):
-                clean_lang = language.split("-")[0]
-                kwargs["language"] = clean_lang
+                for g_model in ["gemini-3.5-flash", "gemini-flash-lite-latest"]:
+                    try:
+                        response = client.models.generate_content(
+                            model=g_model,
+                            contents=[
+                                types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
+                                prompt
+                            ]
+                        )
+                        if response and response.text:
+                            text = response.text.strip()
+                            logger.info(f"Successfully transcribed audio using Google Gemini ({g_model}).")
+                            return text
+                    except Exception as e_m:
+                        logger.info(f"Gemini {g_model} audio transcribe attempt: {e_m}")
+                        continue
+            except Exception as e:
+                logger.warning(f"Google Gemini audio transcription failed: {e}")
 
-            transcription = client.audio.transcriptions.create(**kwargs)
-            text = getattr(transcription, "text", str(transcription)).strip()
-            if text:
-                logger.info("Successfully transcribed audio using OpenAI Whisper Cloud STT.")
-                return text
-        except Exception as e:
-            logger.warning(f"OpenAI Whisper transcription failed, attempting fallback: {e}")
+    # 3. Try OpenAI Whisper Cloud STT
+    openai_candidates = [raw_openai, settings.effective_openai_key]
+    for o_key in openai_candidates:
+        if o_key and len(o_key) > 10:
+            try:
+                from openai import OpenAI
+                client = OpenAI(api_key=o_key, max_retries=0, timeout=6.0)
+                audio_file = (filename or "audio.webm", file_bytes)
 
-    # 3. Try Groq Whisper Cloud STT
-    if raw_groq and len(raw_groq) > 10:
-        try:
-            from groq import Groq
-            client = Groq(api_key=raw_groq, max_retries=0, timeout=10.0)
-            audio_file = (filename or "audio.webm", file_bytes)
+                kwargs = {
+                    "file": audio_file,
+                    "model": "whisper-1",
+                }
+                if language and language not in ("auto", "hinglish"):
+                    clean_lang = language.split("-")[0]
+                    kwargs["language"] = clean_lang
 
-            kwargs = {
-                "file": audio_file,
-                "model": "whisper-large-v3-turbo",
-                "response_format": "json",
-                "temperature": 0.0,
-            }
-            if language and language not in ("auto", "hinglish"):
-                clean_lang = language.split("-")[0]
-                kwargs["language"] = clean_lang
-
-            transcription = client.audio.transcriptions.create(**kwargs)
-            text = getattr(transcription, "text", str(transcription)).strip()
-            if text:
-                logger.info("Successfully transcribed audio using Groq Whisper Cloud STT.")
-                return text
-        except Exception as e:
-            logger.warning(f"Groq Whisper transcription failed: {e}")
+                transcription = client.audio.transcriptions.create(**kwargs)
+                text = getattr(transcription, "text", str(transcription)).strip()
+                if text:
+                    logger.info("Successfully transcribed audio using OpenAI Whisper Cloud STT.")
+                    return text
+            except Exception as e:
+                logger.warning(f"OpenAI Whisper transcription failed: {e}")
 
     raise RuntimeError(
         "Cloud Speech-to-Text requires a valid AI API key (Google Gemini, OpenAI, or Groq). "

@@ -745,23 +745,16 @@ async def parse_voice_to_task(
         raw_groq = raw_openai
         raw_openai = ""
 
-    # 1. Try Google Gemini (gemini-3.5-flash / gemini-flash-lite-latest / gemini-2.0-flash)
-    if raw_gemini and len(raw_gemini) > 10 and not raw_gemini.startswith("AIzaSyDXYy"):
+    # 1. Try Google Gemini (gemini-3.5-flash / gemini-flash-lite-latest)
+    gemini_candidates = [k for k in [raw_gemini, settings.effective_gemini_key] if k and len(k) > 10 and not k.startswith("AIzaSyDXYy")]
+    for gem_key in gemini_candidates:
         try:
             from google import genai
             from google.genai import types
-            client = genai.Client(api_key=raw_gemini)
+            client = genai.Client(api_key=gem_key)
             prompt = f"{ref_info}\nUser Voice Transcript: \"{transcript}\""
             
-            gemini_models_to_try = [
-                "gemini-3.5-flash",
-                "gemini-flash-lite-latest",
-                "gemini-3.5-flash-lite",
-                "gemini-2.0-flash",
-                "gemini-1.5-flash"
-            ]
-            response = None
-            for g_model in gemini_models_to_try:
+            for g_model in ["gemini-3.5-flash", "gemini-flash-lite-latest"]:
                 try:
                     response = client.models.generate_content(
                         model=g_model,
@@ -772,31 +765,60 @@ async def parse_voice_to_task(
                         )
                     )
                     if response and response.text:
-                        break
+                        cleaned_text = response.text.strip()
+                        if cleaned_text.startswith("```json"):
+                            cleaned_text = cleaned_text[7:]
+                        if cleaned_text.startswith("```"):
+                            cleaned_text = cleaned_text[3:]
+                        if cleaned_text.endswith("```"):
+                            cleaned_text = cleaned_text[:-3]
+                        parsed = json.loads(cleaned_text.strip())
+                        parsed["original_transcript"] = transcript
+                        logger.info(f"Google Gemini parsed task successfully: {parsed.get('title')}")
+                        return ExtractedTask(**parsed)
                 except Exception as g_err:
                     logger.info(f"Gemini model {g_model} fallback: {g_err}")
                     continue
-
-            if response and response.text:
-                cleaned_text = response.text.strip()
-                if cleaned_text.startswith("```json"):
-                    cleaned_text = cleaned_text[7:]
-                if cleaned_text.startswith("```"):
-                    cleaned_text = cleaned_text[3:]
-                if cleaned_text.endswith("```"):
-                    cleaned_text = cleaned_text[:-3]
-                parsed = json.loads(cleaned_text.strip())
-                parsed["original_transcript"] = transcript
-                logger.info(f"Google Gemini parsed task successfully: {parsed.get('title')}")
-                return ExtractedTask(**parsed)
         except Exception as e:
             logger.warning(f"Google Gemini task parsing fallback: {e}")
 
-    # 2. Try OpenAI LLM (gpt-4o-mini)
-    if raw_openai and len(raw_openai) > 10:
+    # 2. Try Groq LLM (High speed ~1.2s inference)
+    groq_candidates = [k for k in [raw_groq, settings.effective_groq_key] if k and len(k) > 10]
+    for g_key in groq_candidates:
+        try:
+            from groq import Groq
+            client = Groq(api_key=g_key, max_retries=1, timeout=6.0)
+            prompt = f"{ref_info}\nUser Voice Transcript: \"{transcript}\""
+            
+            for groq_model in ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "llama-3.3-70b-versatile"]:
+                try:
+                    completion = client.chat.completions.create(
+                        model=groq_model,
+                        messages=[
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "user", "content": prompt}
+                        ],
+                        response_format={"type": "json_object"},
+                        temperature=0.0
+                    )
+                    if completion and completion.choices:
+                        raw_json = completion.choices[0].message.content
+                        parsed = json.loads(raw_json)
+                        parsed["original_transcript"] = transcript
+                        logger.info(f"Groq parsed task successfully: {parsed.get('title')}")
+                        return ExtractedTask(**parsed)
+                except Exception as groq_err:
+                    logger.info(f"Groq model {groq_model} fallback: {groq_err}")
+                    continue
+        except Exception as e:
+            logger.warning(f"Groq task parsing fallback: {e}")
+
+    # 3. Try OpenAI LLM (gpt-4o-mini)
+    openai_candidates = [k for k in [raw_openai, settings.effective_openai_key] if k and len(k) > 10]
+    for o_key in openai_candidates:
         try:
             from openai import OpenAI
-            client = OpenAI(api_key=raw_openai, max_retries=0, timeout=6.0)
+            client = OpenAI(api_key=o_key, max_retries=0, timeout=6.0)
             prompt = f"{ref_info}\nUser Voice Transcript: \"{transcript}\""
             
             completion = client.chat.completions.create(
@@ -815,46 +837,6 @@ async def parse_voice_to_task(
             return ExtractedTask(**parsed)
         except Exception as e:
             logger.warning(f"OpenAI task parsing fallback: {e}")
-
-    # 3. Try Groq LLM (OpenAI-compatible / Qwen / Llama on Groq)
-    if raw_groq and len(raw_groq) > 10:
-        try:
-            from groq import Groq
-            client = Groq(api_key=raw_groq, max_retries=0, timeout=6.0)
-            prompt = f"{ref_info}\nUser Voice Transcript: \"{transcript}\""
-            
-            groq_models_to_try = [
-                "openai/gpt-oss-120b",
-                "qwen/qwen3.8-27b",
-                "llama-3.3-70b-versatile",
-                "llama3-70b-8192"
-            ]
-            completion = None
-            for groq_model in groq_models_to_try:
-                try:
-                    completion = client.chat.completions.create(
-                        model=groq_model,
-                        messages=[
-                            {"role": "system", "content": SYSTEM_PROMPT},
-                            {"role": "user", "content": prompt}
-                        ],
-                        response_format={"type": "json_object"},
-                        temperature=0.0
-                    )
-                    if completion and completion.choices:
-                        break
-                except Exception as groq_err:
-                    logger.info(f"Groq model {groq_model} fallback: {groq_err}")
-                    continue
-
-            if completion and completion.choices:
-                raw_json = completion.choices[0].message.content
-                parsed = json.loads(raw_json)
-                parsed["original_transcript"] = transcript
-                logger.info(f"Groq parsed task successfully: {parsed.get('title')}")
-                return ExtractedTask(**parsed)
-        except Exception as e:
-            logger.warning(f"Groq task parsing fallback: {e}")
 
     # 4. Fallback to refined intelligent multilingual heuristic
     logger.info("Using refined intelligent heuristic multilingual parser with natural title polishing.")
