@@ -1,0 +1,30 @@
+{
+  "version": "2.0",
+  "routeKey": "GET /health",
+  "rawPath": "/health",
+  "rawQueryString": "",
+  "headers": {
+    "accept": "application/json",
+    "host": "example.execute-api.us-east-1.amazonaws.com",
+    "user-agent": "Lambda-Test-Event"
+  },
+  "requestContext": {
+    "accountId": "123456789012",
+    "apiId": "example",
+    "domainName": "example.execute-api.us-east-1.amazonaws.com",
+    "domainPrefix": "example",
+    "http": {
+      "method": "GET",
+      "path": "/health",
+      "protocol": "HTTP/1.1",
+      "sourceIp": "127.0.0.1",
+      "userAgent": "Lambda-Test-Event"
+    },
+    "requestId": "lambda-console-test",
+    "routeKey": "GET /health",
+    "stage": "$default",
+    "time": "09/Oct/2026:13:48:45 +0000",
+    "timeEpoch": 1791553725000
+  },
+  "isBase64Encoded": false
+}
