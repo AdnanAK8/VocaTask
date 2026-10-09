@@ -49,12 +49,22 @@ async def transcribe_audio_file(
     # Resolve keys with smart auto-detection
     raw_gemini = (gemini_api_key or settings.effective_gemini_key or os.environ.get("GEMINI_API_KEY", "")).strip()
     raw_openai = (openai_api_key or settings.effective_openai_key or os.environ.get("OPENAI_API_KEY", "")).strip()
-    raw_groq = (groq_api_key or settings.GROQ_API_KEY or os.environ.get("GROQ_API_KEY", "")).strip()
+    raw_groq = (groq_api_key or settings.effective_groq_key or settings.GROQ_API_KEY or os.environ.get("GROQ_API_KEY", "")).strip()
 
-    # If an OpenAI key was provided in the Gemini field, alias it
+    # Smart key detection and cross-aliasing
     if raw_gemini.startswith("sk-") and not raw_openai:
         raw_openai = raw_gemini
         raw_gemini = ""
+    elif raw_gemini.startswith("gsk_") and not raw_groq:
+        raw_groq = raw_gemini
+        raw_gemini = ""
+
+    if raw_openai.startswith("AIzaSy") and not raw_gemini:
+        raw_gemini = raw_openai
+        raw_openai = ""
+    elif raw_openai.startswith("gsk_") and not raw_groq:
+        raw_groq = raw_openai
+        raw_openai = ""
 
     # 1. Try Gemini Multimodal Cloud Audio (Primary Cloud STT when Gemini key is configured)
     if raw_gemini and len(raw_gemini) > 10 and not raw_gemini.startswith("AIzaSyDXYy"):
@@ -71,24 +81,23 @@ async def transcribe_audio_file(
                 "Output ONLY the verbatim transcript text with no markdown formatting, explanations, or quotes."
             )
 
-            # Try gemini-2.0-flash first, fallback to gemini-1.5-flash
-            try:
-                response = client.models.generate_content(
-                    model="gemini-2.0-flash",
-                    contents=[
-                        types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
-                        prompt
-                    ]
-                )
-            except Exception as e_20:
-                logger.info(f"Gemini 2.0 Flash audio transcribe retry with 1.5-flash: {e_20}")
-                response = client.models.generate_content(
-                    model="gemini-1.5-flash",
-                    contents=[
-                        types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
-                        prompt
-                    ]
-                )
+            # Try active Gemini models (gemini-3.5-flash / gemini-flash-lite-latest / gemini-2.0-flash)
+            models_to_try = ["gemini-3.5-flash", "gemini-flash-lite-latest", "gemini-2.0-flash", "gemini-1.5-flash"]
+            response = None
+            for g_model in models_to_try:
+                try:
+                    response = client.models.generate_content(
+                        model=g_model,
+                        contents=[
+                            types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
+                            prompt
+                        ]
+                    )
+                    if response and response.text:
+                        break
+                except Exception as e_m:
+                    logger.info(f"Gemini model {g_model} audio transcribe retry: {e_m}")
+                    continue
 
             text = response.text.strip() if response and response.text else ""
             if text:
@@ -101,7 +110,7 @@ async def transcribe_audio_file(
     if raw_openai and len(raw_openai) > 10:
         try:
             from openai import OpenAI
-            client = OpenAI(api_key=raw_openai)
+            client = OpenAI(api_key=raw_openai, max_retries=0, timeout=10.0)
             audio_file = (filename or "audio.webm", file_bytes)
 
             kwargs = {
@@ -124,7 +133,7 @@ async def transcribe_audio_file(
     if raw_groq and len(raw_groq) > 10:
         try:
             from groq import Groq
-            client = Groq(api_key=raw_groq)
+            client = Groq(api_key=raw_groq, max_retries=0, timeout=10.0)
             audio_file = (filename or "audio.webm", file_bytes)
 
             kwargs = {

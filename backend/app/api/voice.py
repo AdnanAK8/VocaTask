@@ -9,6 +9,30 @@ from app.core.config import settings
 logger = logging.getLogger("voice_api")
 router = APIRouter(prefix="/voice", tags=["Voice & AI"])
 
+@router.get("/status")
+async def get_voice_status():
+    """
+    Returns AI model status and configuration so frontend and team members know
+    if backend cloud AI is active.
+    """
+    has_gemini = bool(settings.effective_gemini_key)
+    has_openai = bool(settings.effective_openai_key)
+    has_groq = bool(settings.effective_groq_key)
+    provider = settings.active_ai_provider
+
+    return {
+        "backend_ai_configured": bool(has_gemini or has_openai or has_groq),
+        "provider": provider,
+        "has_gemini": has_gemini,
+        "has_openai": has_openai,
+        "has_groq": has_groq,
+        "message": (
+            f"Backend cloud AI is configured with {provider.upper()} from server .env."
+            if (has_gemini or has_openai or has_groq)
+            else "Backend is running fast built-in multilingual AI parser."
+        )
+    }
+
 @router.post("/process-text", response_model=ExtractedTask)
 async def process_text_task(
     request: TextProcessRequest,

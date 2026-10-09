@@ -269,7 +269,6 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
   };
 
   const stopRecording = async () => {
-    const speechRecognitionEnded = speechRecognitionEndedRef.current;
     // 1. Stop Speech Recognition
     if (speechRecognizerRef.current) {
       try {
@@ -296,17 +295,6 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
       }
     }
 
-    if (speechRecognitionEnded) {
-      let timeoutId: number | undefined;
-      await Promise.race([
-        speechRecognitionEnded,
-        new Promise<void>((resolve) => {
-          timeoutId = window.setTimeout(resolve, 2000);
-        }),
-      ]);
-      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
-    }
-
     cleanupAudioResources();
     setIsRecording(false);
     setIsProcessing(true);
@@ -316,16 +304,25 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
     const recognitionError = speechRecognitionErrorRef.current;
 
     try {
-      // Primary: Send audio to Cloud Speech-to-Text (Gemini / Whisper) -> Gemini Task Structuring
+      // 1. FAST ZERO-LATENCY PATH: If browser speech recognition already transcribed speech in real-time,
+      // extract the task directly from text! Instant, zero network audio delay, zero cloud STT overhead.
+      if (spokenText.length >= 2) {
+        setLiveTranscript(`Transcribed: "${spokenText}"`);
+        const task = await api.processVoiceText(spokenText);
+        onTaskExtracted(task);
+        return;
+      }
+
+      // 2. CLOUD AUDIO PATH: Only if browser speech recognition did not capture text (e.g. unsupported browser),
+      // upload the audio blob to server/cloud audio transcription.
       if (recordedBlob && recordedBlob.size > 200) {
-        setLiveTranscript('Cloud AI transcribing audio speech & structuring task...');
+        setLiveTranscript('Transcribing audio speech & structuring task...');
         try {
           const task = await api.processVoiceAudio(recordedBlob, selectedLang);
           onTaskExtracted(task);
           return;
         } catch (audioErr) {
-          console.warn('Cloud audio transcription error, trying text fallback:', audioErr);
-          // If cloud audio fails but local speech recognition captured text, fallback to text
+          console.warn('Cloud audio transcription error, checking text fallback:', audioErr);
           if (spokenText.length >= 2) {
             const task = await api.processVoiceText(spokenText);
             onTaskExtracted(task);
@@ -334,12 +331,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
           throw audioErr;
         }
       }
-      // Secondary: If recorded blob was empty but speech recognition had text
-      else if (spokenText.length >= 2) {
-        setLiveTranscript('AI structuring task...');
-        const task = await api.processVoiceText(spokenText);
-        onTaskExtracted(task);
-      } else {
+      else {
         if (maxVolumeRef.current < 5) {
           setErrorMsg('No sound detected from microphone. Please ensure your microphone is unmuted and speak clearly.');
         } else if (recognitionError === 'not-allowed' || recognitionError === 'service-not-allowed') {

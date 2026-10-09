@@ -61,5 +61,20 @@ class TestUserVoiceExamples(unittest.TestCase):
         self.assertEqual(res["scheduled_time"], "19:00")
         self.assertEqual(res["category"], "health")
 
+    def test_seminar_october_21st(self):
+        # "21st October I have a seminar."
+        res = heuristic_parse_task("21st October I have a seminar.", self.ref_dt)
+        self.assertEqual(res["title"], "Attend Seminar")
+        self.assertEqual(res["scheduled_date"], "2026-10-21")
+        self.assertNotEqual(res["scheduled_time"], "21:00")
+        self.assertEqual(res["category"], "study")
+
+    def test_workshop_november(self):
+        # "15th November workshop"
+        res = heuristic_parse_task("15th November workshop", self.ref_dt)
+        self.assertEqual(res["title"], "Attend Workshop")
+        self.assertEqual(res["scheduled_date"], "2026-11-15")
+        self.assertEqual(res["category"], "study")
+
 if __name__ == '__main__':
     unittest.main()

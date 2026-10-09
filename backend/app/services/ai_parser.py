@@ -308,49 +308,133 @@ def polish_task_title(title: str) -> str:
         bill = m_pay.group(1).strip()
         return f"Pay {to_title_case(bill)}"
 
+    # 9. Pattern: seminar / webinar / workshop / conference / presentation
+    m_event = re.match(r'^(?:attend|join|participate\s+in)?\s*(?:a\s+)?(seminar|webinar|workshop|conference|presentation|demo|symposium)(?:\s+(?:hai|attend|karna))?$', cleaned, re.IGNORECASE)
+    if m_event:
+        event_type = m_event.group(1).lower()
+        return f"Attend {event_type.capitalize()}"
+    if cleaned.lower() in ('seminar', 'webinar', 'workshop', 'conference', 'presentation', 'demo'):
+        return f"Attend {cleaned.capitalize()}"
+
+    m_event_topic = re.match(r'^(?:attend\s+)?(.*?)\s+(seminar|webinar|workshop|conference|presentation)(?:\s+(?:hai|attend|karna))?$', cleaned, re.IGNORECASE)
+    if m_event_topic:
+        topic = m_event_topic.group(1).strip()
+        event_word = m_event_topic.group(2).strip().capitalize()
+        if topic.lower() not in ('i have a', 'i have an', 'have a', 'have an', 'a', 'an', 'the', 'my', 'mera', 'meri', 'ek'):
+            return to_title_case(f"Attend {topic} {event_word}")
+        return f"Attend {event_word}"
+
     return to_title_case(cleaned)
+
+MONTH_NAME_TO_NUM = {
+    'january': 1, 'jan': 1, 'जनवरी': 1, 'ਜਨਵਰੀ': 1, 'janvari': 1,
+    'february': 2, 'feb': 2, 'फ़रवरी': 2, 'फरवरी': 2, 'ਫ਼ਰਵਰੀ': 2, 'ਫਰਵਰੀ': 2, 'farvari': 2,
+    'march': 3, 'mar': 3, 'मार्च': 3, 'ਮਾਰਚ': 3,
+    'april': 4, 'apr': 4, 'अप्रैल': 4, 'ਅਪ੍ਰੈਲ': 4,
+    'may': 5, 'मई': 5, 'ਮਈ': 5, 'mai': 5,
+    'june': 6, 'jun': 6, 'जून': 6, 'ਜੂਨ': 6,
+    'july': 7, 'jul': 7, 'जुलाई': 7, 'ਜੁਲਾਈ': 7,
+    'august': 8, 'aug': 8, 'अगस्त': 8, 'ਅਗਸਤ': 8, 'agast': 8,
+    'september': 9, 'sep': 9, 'sept': 9, 'सितंबर': 9, 'ਸਤੰਬਰ': 9, 'sitambar': 9,
+    'october': 10, 'oct': 10, 'अक्टूबर': 10, 'अक्तूबर': 10, 'ਅਕਤੂਬਰ': 10, 'aktubar': 10,
+    'november': 11, 'nov': 11, 'नवंबर': 11, 'ਨਵੰਬਰ': 11, 'navambar': 11,
+    'december': 12, 'dec': 12, 'दिसंबर': 12, 'ਦਸੰਬਰ': 12, 'disambar': 12
+}
+
+_MONTH_KEYS = sorted(MONTH_NAME_TO_NUM.keys(), key=len, reverse=True)
+_MONTH_REGEX_STR = '|'.join(re.escape(k) for k in _MONTH_KEYS)
+
+RE_DAY_MONTH = re.compile(
+    rf'\b(?P<day>\d{{1,2}})(?:st|nd|rd|th)?\s+(?:of\s+)?(?P<month>{_MONTH_REGEX_STR})(?:\s+(?P<year>\d{{4}}))?\b',
+    re.IGNORECASE
+)
+RE_MONTH_DAY = re.compile(
+    rf'\b(?P<month>{_MONTH_REGEX_STR})\s+(?P<day>\d{{1,2}})(?:st|nd|rd|th)?(?:\s*,?\s*(?P<year>\d{{4}}))?\b',
+    re.IGNORECASE
+)
+RE_NUMERIC_DATE = re.compile(
+    r'\b(?P<day>\d{1,2})[/-](?P<month>\d{1,2})(?:[/-](?P<year>\d{2,4}))?\b'
+)
 
 def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
     """
     Intelligent heuristic fallback parser for Hindi, Hinglish, Punjabi, and English.
-    Refined with comprehensive multi-script regex and relative time normalization.
+    Refined with comprehensive multi-script regex, calendar dates, and relative time normalization.
     """
     text_lower = transcript.lower()
     
     # 1. Date resolution
     task_date: Optional[date] = None
-    # Check weekday names
-    weekday_map = {
-        'monday': 0, 'somwar': 0, 'ਸੋਮਵਾਰ': 0, 'सोमवार': 0,
-        'tuesday': 1, 'mangalwar': 1, 'ਮੰਗਲਵਾਰ': 1, 'मंगलवार': 1,
-        'wednesday': 2, 'budhwar': 2, 'ਬੁੱਧਵਾਰ': 2, 'बुधवार': 2,
-        'thursday': 3, 'guruwar': 3, 'veervar': 3, 'ਵੀਰਵਾਰ': 3, 'गुरुवार': 3,
-        'friday': 4, 'shukrawar': 4, 'ਸ਼ੁੱਕਰਵਾਰ': 4, 'शुक्रवार': 4,
-        'saturday': 5, 'shaniwar': 5, 'ਸ਼ਨਿੱਚਰਵਾਰ': 5, 'शनिवार': 5,
-        'sunday': 6, 'ravivar': 6, 'aitwar': 6, 'ਐਤਵਾਰ': 6, 'रविवार': 6
-    }
-    
-    matched_weekday = None
-    for day_name, day_idx in weekday_map.items():
-        if re.search(rf'\b{re.escape(day_name)}\b', text_lower):
-            matched_weekday = day_idx
-            break
+    matched_date_str = ""
 
-    if any(k in text_lower for k in ["parson", "day after tomorrow", "day after", "ਪਰਸੋਂ", "परसों"]):
-        task_date = (ref_dt + timedelta(days=2)).date()
-    elif any(k in text_lower for k in ["kal", "tomorrow", "ਕੱਲ੍ਹ", "कल"]):
-        task_date = (ref_dt + timedelta(days=1)).date()
-    elif any(k in text_lower for k in ["aaj", "today", "tonight", "aaj raat", "ਅੱਜ", "आज"]):
-        task_date = ref_dt.date()
-    elif any(k in text_lower for k in ["agle hafte", "next week", "ਅਗਲੇ ਹਫ਼ਤੇ"]):
-        task_date = (ref_dt + timedelta(days=7)).date()
-    elif matched_weekday is not None:
-        days_ahead = (matched_weekday - ref_dt.weekday()) % 7
-        if days_ahead == 0:
-            days_ahead = 7
-        task_date = (ref_dt + timedelta(days=days_ahead)).date()
-    else:
-        task_date = (ref_dt + timedelta(days=1)).date()
+    # 1a. Explicit calendar dates (e.g. "21st October", "October 21st", "21 Oct", "21/10/2026")
+    m_cal = RE_DAY_MONTH.search(text_lower) or RE_MONTH_DAY.search(text_lower)
+    if m_cal:
+        try:
+            d_val = int(m_cal.group('day'))
+            m_name = m_cal.group('month').lower()
+            mon_val = MONTH_NAME_TO_NUM.get(m_name, 10)
+            y_group = m_cal.groupdict().get('year')
+            y_val = int(y_group) if y_group else ref_dt.year
+            if 1 <= d_val <= 31 and 1 <= mon_val <= 12:
+                candidate = date(y_val, mon_val, d_val)
+                # If date is in past (>30 days ago) and no year was specified, assume next year
+                if not y_group and candidate < (ref_dt.date() - timedelta(days=30)):
+                    candidate = date(y_val + 1, mon_val, d_val)
+                task_date = candidate
+                matched_date_str = m_cal.group(0)
+        except (ValueError, TypeError):
+            pass
+
+    if not task_date:
+        m_num = RE_NUMERIC_DATE.search(text_lower)
+        if m_num:
+            try:
+                d_val = int(m_num.group('day'))
+                mon_val = int(m_num.group('month'))
+                y_group = m_num.groupdict().get('year')
+                y_val = int(y_group) if y_group else ref_dt.year
+                if y_val < 100:
+                    y_val += 2000
+                if 1 <= d_val <= 31 and 1 <= mon_val <= 12:
+                    task_date = date(y_val, mon_val, d_val)
+                    matched_date_str = m_num.group(0)
+            except (ValueError, TypeError):
+                pass
+
+    # 1b. Relative date keywords if no calendar date matched
+    if not task_date:
+        weekday_map = {
+            'monday': 0, 'somwar': 0, 'ਸੋਮਵਾਰ': 0, 'सोमवार': 0,
+            'tuesday': 1, 'mangalwar': 1, 'ਮੰਗਲਵਾਰ': 1, 'मंगलवार': 1,
+            'wednesday': 2, 'budhwar': 2, 'ਬੁੱਧਵਾਰ': 2, 'बुधवार': 2,
+            'thursday': 3, 'guruwar': 3, 'veervar': 3, 'ਵੀਰਵਾਰ': 3, 'गुरुवार': 3,
+            'friday': 4, 'shukrawar': 4, 'ਸ਼ੁੱਕਰਵਾਰ': 4, 'शुक्रवार': 4,
+            'saturday': 5, 'shaniwar': 5, 'ਸ਼ਨਿੱਚਰਵਾਰ': 5, 'शनिवार': 5,
+            'sunday': 6, 'ravivar': 6, 'aitwar': 6, 'ਐਤਵਾਰ': 6, 'रविवार': 6
+        }
+        
+        matched_weekday = None
+        for day_name, day_idx in weekday_map.items():
+            if re.search(rf'\b{re.escape(day_name)}\b', text_lower):
+                matched_weekday = day_idx
+                break
+
+        if any(k in text_lower for k in ["parson", "day after tomorrow", "day after", "ਪਰਸੋਂ", "परसों"]):
+            task_date = (ref_dt + timedelta(days=2)).date()
+        elif any(k in text_lower for k in ["kal", "tomorrow", "ਕੱਲ੍ਹ", "कल"]):
+            task_date = (ref_dt + timedelta(days=1)).date()
+        elif any(k in text_lower for k in ["aaj", "today", "tonight", "aaj raat", "ਅੱਜ", "आज"]):
+            task_date = ref_dt.date()
+        elif any(k in text_lower for k in ["agle hafte", "next week", "ਅਗਲੇ ਹਫ਼ਤੇ"]):
+            task_date = (ref_dt + timedelta(days=7)).date()
+        elif matched_weekday is not None:
+            days_ahead = (matched_weekday - ref_dt.weekday()) % 7
+            if days_ahead == 0:
+                days_ahead = 7
+            task_date = (ref_dt + timedelta(days=days_ahead)).date()
+        else:
+            task_date = (ref_dt + timedelta(days=1)).date()
 
     # 2. Time resolution (with Hindi & Punjabi scripts)
     task_time: Optional[str] = None
@@ -379,10 +463,17 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
         normalized_text = re.sub(rf'(?i)\b{re.escape(word)}\s*(baje|बजे|ਵਜੇ|am|pm|o\'clock)', f'{num} \\1', normalized_text)
         normalized_text = re.sub(rf'(?i)(subah|subh|shaam|sham|raat|morning|evening|night|सवेरे|सुबह|शाम|रात|ਸਵੇਰੇ|ਸ਼ਾਮ|ਰਾਤ)\s+{re.escape(word)}\b', f'\\1 {num}', normalized_text)
 
+    # Clean calendar date and ordinal words from text_for_time so date numbers (e.g. 21 in 21st October) are NEVER parsed as hour!
+    text_for_time = normalized_text
+    if matched_date_str:
+        text_for_time = re.sub(rf'(?i)(?:\b(?:on|at|for)\s+)?{re.escape(matched_date_str)}', ' ', text_for_time)
+    text_for_time = re.sub(r'\b\d{1,2}(?:st|nd|rd|th)\b', ' ', text_for_time, flags=re.IGNORECASE)
+    text_for_time = re.sub(r'\b(?:in\s+)?\d{1,2}\s+(?:days?|din|hafte|weeks?)\b', ' ', text_for_time, flags=re.IGNORECASE)
+
     # Relative time offsets ("in 30 minutes", "aadhe ghante baad", "1 ghante baad")
-    m_rel_min = re.search(r'\b(?:in\s+)?(\d{1,2})\s*(?:min|mins|minutes|minute)\b|\b(\d{1,2})\s*minute\s+baad\b', normalized_text)
-    m_rel_hour = re.search(r'\b(?:in\s+)?(\d{1,2})\s*(?:hr|hrs|hour|hours)\b|\b(\d{1,2})\s*ghante?\s+baad\b', normalized_text)
-    if "aadhe ghante" in normalized_text or "half an hour" in normalized_text:
+    m_rel_min = re.search(r'\b(?:in\s+)?(\d{1,2})\s*(?:min|mins|minutes|minute)\b|\b(\d{1,2})\s*minute\s+baad\b', text_for_time)
+    m_rel_hour = re.search(r'\b(?:in\s+)?(\d{1,2})\s*(?:hr|hrs|hour|hours)\b|\b(\d{1,2})\s*ghante?\s+baad\b', text_for_time)
+    if "aadhe ghante" in text_for_time or "half an hour" in text_for_time:
         target_dt = ref_dt + timedelta(minutes=30)
         task_time = target_dt.strftime("%H:%M")
         task_date = target_dt.date()
@@ -396,20 +487,20 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
         target_dt = ref_dt + timedelta(hours=hrs)
         task_time = target_dt.strftime("%H:%M")
         task_date = target_dt.date()
-    elif re.search(r'\b(dedh|ਡੇਢ|डेढ़)\s*(?:baje|बजे|ਵਜੇ)?\b', normalized_text):
+    elif re.search(r'\b(dedh|ਡੇਢ|डेढ़)\s*(?:baje|बजे|ਵਜੇ)?\b', text_for_time):
         parsed_hour = 1
         parsed_minutes = 30
         h = 13 if (is_afternoon or is_pm) else 1
         task_time = f"{h:02d}:30"
-    elif re.search(r'\b(dhaai|dhayi|ਢਾਈ|ढाई)\s*(?:baje|बजे|ਵਜੇ)?\b', normalized_text):
+    elif re.search(r'\b(dhaai|dhayi|ਢਾਈ|ढाई)\s*(?:baje|बजे|ਵਜੇ)?\b', text_for_time):
         parsed_hour = 2
         parsed_minutes = 30
         h = 14 if (is_afternoon or is_pm) else 2
         task_time = f"{h:02d}:30"
     else:
-        m_half = re.search(r'\b(?:sadhe|saadhe|ਸਾਢੇ|साढ़े)\s+(\d{1,2})', normalized_text)
-        m_sava = re.search(r'\b(?:sava|sawwa|ਸਵਾ|सवा)\s+(\d{1,2})', normalized_text)
-        m_paune = re.search(r'\b(?:paune|pauna|ਪੌਣੇ|पौने)\s+(\d{1,2})', normalized_text)
+        m_half = re.search(r'\b(?:sadhe|saadhe|ਸਾਢੇ|साढ़े)\s+(\d{1,2})', text_for_time)
+        m_sava = re.search(r'\b(?:sava|sawwa|ਸਵਾ|सवा)\s+(\d{1,2})', text_for_time)
+        m_paune = re.search(r'\b(?:paune|pauna|ਪੌਣੇ|पौने)\s+(\d{1,2})', text_for_time)
         
         parsed_hour: Optional[int] = None
         parsed_minutes: int = 0
@@ -424,10 +515,22 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
             parsed_hour = (h - 1) if h > 1 else 12
             parsed_minutes = 45
         else:
-            time_match = re.search(r'(\d{1,2})(?::(\d{2}))?\s*(?:baje|बजे|ਵਜੇ|pm|am|o\'clock)?', normalized_text)
-            if time_match:
-                parsed_hour = int(time_match.group(1))
-                parsed_minutes = int(time_match.group(2)) if time_match.group(2) else 0
+            # Match time with explicit colon HH:MM
+            m_colon = re.search(r'\b(\d{1,2}):(\d{2})\s*(?:pm|am|p\.m\.|a\.m\.)?', text_for_time, re.IGNORECASE)
+            # Match time with explicit marker (baje, am, pm, o'clock)
+            m_marker = re.search(r'\b(\d{1,2})(?::(\d{2}))?\s*(?:baje|बजे|ਵਜੇ|pm|am|p\.m\.|a\.m\.|o\'clock)\b', text_for_time, re.IGNORECASE)
+            # Match time with explicit preposition (at 6, around 7, subah 8, shaam 6)
+            m_prep = re.search(r'\b(?:at|around|sharply\s+at|subah|subh|shaam|sham|raat|morning|evening|night|सवेरे|सुबह|शाम|रात|ਸਵੇਰੇ|ਸ਼ਾਮ|ਰਾਤ)\s+(\d{1,2})(?::(\d{2}))?\b', text_for_time, re.IGNORECASE)
+
+            if m_colon:
+                parsed_hour = int(m_colon.group(1))
+                parsed_minutes = int(m_colon.group(2))
+            elif m_marker:
+                parsed_hour = int(m_marker.group(1))
+                parsed_minutes = int(m_marker.group(2)) if m_marker.group(2) else 0
+            elif m_prep:
+                parsed_hour = int(m_prep.group(1))
+                parsed_minutes = int(m_prep.group(2)) if m_prep.group(2) else 0
 
         if parsed_hour is not None:
             hour = parsed_hour
@@ -474,18 +577,28 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
     wake_keywords = [
         "uthna", "uthana", "jagna", "wake up", "get up", "ਉੱਠਣਾ", "ਉਠਣਾ", "उठना", "जागना"
     ]
-    if any(w in text_lower for w in ["dbms", "database", "assignment", "study", "exam", "padhna", "homework", "class", "college", "school", "test", "course", "lecture", "ਪੜ੍ਹਨਾ", "ਪੜ੍ਹਾਈ", "पढ़ना", "परीक्षा"]):
+    study_keywords = [
+        "dbms", "database", "assignment", "study", "exam", "padhna", "homework", "class",
+        "college", "school", "test", "course", "lecture", "seminar", "webinar", "workshop",
+        "ਪੜ੍ਹਨਾ", "ਪੜ੍ਹਾਈ", "पढ़ना", "परीक्षा"
+    ]
+    work_keywords = [
+        "meeting", "project", "office", "client", "boss", "work", "presentation", "interview",
+        "conference", "client call", "email", "report", "standup", "sync", "ਮੀਟਿੰਗ", "ਕੰਮ", "मीटिंग"
+    ]
+
+    if any(w in text_lower for w in study_keywords):
         category = "study"
     elif any(w in text_lower for w in health_keywords):
         category = "health"
-    elif any(w in text_lower for w in ["meeting", "project", "office", "client", "boss", "work", "presentation", "interview", "client call", "email", "report", "standup", "sync", "ਮੀਟਿੰਗ", "ਕੰਮ", "मीटिंग"]):
+    elif any(w in text_lower for w in work_keywords):
         category = "work"
     elif any(w in text_lower for w in ["bill", "recharge", "fee", "pay", "bank", "money", "rent", "salary", "loan", "tax", "credit card", "ਪੈਸੇ", "ਬਿੱਲ", "पैसे", "बिल"]):
         category = "finance"
     elif any(w in text_lower for w in personal_keywords) or any(w in text_lower for w in wake_keywords):
         category = "personal"
 
-    # 4. Metric 4: Priority detection
+    # 4. Priority detection
     priority = "medium"
     high_urgency_keywords = [
         "urgent", "bohot zaroori", "bahut jaruri", "bahut zaroori", "zaroori", "jaruri",
@@ -495,7 +608,7 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
     ]
     low_priority_keywords = [
         "kabhi bhi", "casual", "whenever", "low priority", "not urgent", "fursat me",
-        "free time", "jab time mile", "chill", "optional", "no rush", "ਕਦੇ ਵੀ", "ਫੁਰਸਤ", "फुर्सत", "कभी भी"
+        "free time", "jab time mile", "chill", "optional", "no rush", "ਕਦੇ ਵੀ", "ਫੁਰਸਤ", "फुर्सਤ", "कभी भी"
     ]
     if any(w in text_lower for w in high_urgency_keywords):
         priority = "high"
@@ -506,7 +619,17 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
 
     # 5. Clean Title Extraction
     clean_title = transcript
-    latin_phrases = [
+
+    # Strip matched calendar date from title
+    if matched_date_str:
+        clean_title = re.sub(rf'(?i)(?:\b(?:on|at|for)\s+)?{re.escape(matched_date_str)}', ' ', clean_title)
+    clean_title = RE_DAY_MONTH.sub(' ', clean_title)
+    clean_title = RE_MONTH_DAY.sub(' ', clean_title)
+    clean_title = RE_NUMERIC_DATE.sub(' ', clean_title)
+
+    conversational_phrases = [
+        "i have a", "i have an", "i have", "there is a", "there is an", "we have a",
+        "mera ek", "meri ek", "ek", "mujhko",
         "remind me to", "remind me", "please remind me to", "can you remind me to",
         "tomorrow at", "tomorrow evening", "tomorrow morning",
         "tomorrow afternoon", "tomorrow night", "tomorrow", "today at", "today evening",
@@ -520,7 +643,7 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
         "kal shaam", "kal subah", "kal raat", "kal dopahar", "kal",
         "aaj shaam", "aaj subah", "aaj raat", "aaj", "parson",
         "mujhe", "mera task banao", "likh lo", "karna hai", "karni hai", "jana hai", "jani hai",
-        "dena hai", "deni hai", "karna", "jana", "hai", "ko", "me", "mein", "baje"
+        "dena hai", "deni hai", "karna", "jana", "hai", "ko", "me", "mein", "nu", "baje"
     ]
     indic_phrases = [
         "कल सुबह", "कल शाम", "कल रात", "कल दोपहर", "कल", "आज सुबह", "आज शाम", "आज रात", "आज", "परसों",
@@ -530,20 +653,22 @@ def heuristic_parse_task(transcript: str, ref_dt: datetime) -> Dict[str, Any]:
     ]
 
     for mod in TIME_MODIFIERS:
-        clean_title = re.sub(rf'(?i)\b{re.escape(mod)}\b', '', clean_title)
+        clean_title = re.sub(rf'(?i)\b{re.escape(mod)}\b', ' ', clean_title)
 
     for word in sorted(WORD_TO_NUMBER.keys(), key=len, reverse=True):
-        clean_title = re.sub(rf'(?i)\b{re.escape(word)}\s*(?:baje|बजे|ਵਜੇ|am|pm|o\'clock)\b', '', clean_title)
-        clean_title = re.sub(rf'(?i)\b(?:subah|subh|shaam|sham|raat|morning|evening|night|सवेरे|सुबह|शाम|रात|ਸਵੇਰੇ|ਸ਼ਾਮ|ਰਾਤ)\s+{re.escape(word)}\b', '', clean_title)
+        clean_title = re.sub(rf'(?i)\b{re.escape(word)}\s*(?:baje|बजे|ਵਜੇ|am|pm|o\'clock)\b', ' ', clean_title)
+        clean_title = re.sub(rf'(?i)\b(?:subah|subh|shaam|sham|raat|morning|evening|night|सवेरे|सुबह|शाम|रात|ਸਵੇਰੇ|ਸ਼ਾਮ|ਰਾਤ)\s+{re.escape(word)}\b', ' ', clean_title)
 
-    for phrase in sorted(latin_phrases, key=len, reverse=True):
-        clean_title = re.sub(rf'(?i)\b{re.escape(phrase)}\b', '', clean_title)
+    for phrase in sorted(conversational_phrases, key=len, reverse=True):
+        clean_title = re.sub(rf'(?i)\b{re.escape(phrase)}\b', ' ', clean_title)
 
     for phrase in sorted(indic_phrases, key=len, reverse=True):
-        clean_title = clean_title.replace(phrase, '')
-        
-    clean_title = re.sub(r'\b\d{1,2}(?::\d{2})?\s*(?:baje|बजे|ਵਜੇ|pm|am|o\'clock)?\b', '', clean_title, flags=re.IGNORECASE)
-    clean_title = re.sub(r'[\d\u0966-\u096f\u0a66-\u0a6f]+', '', clean_title)
+        clean_title = clean_title.replace(phrase, ' ')
+
+    # Clean stray ordinal indicators (e.g. "st", "nd", "rd", "th" left over from dates)
+    clean_title = re.sub(r'\b(?:st|nd|rd|th)\b', ' ', clean_title, flags=re.IGNORECASE)
+    clean_title = re.sub(r'\b\d{1,2}(?::\d{2})?\s*(?:baje|बजे|ਵਜੇ|pm|am|o\'clock)?\b', ' ', clean_title, flags=re.IGNORECASE)
+    clean_title = re.sub(r'[\d\u0966-\u096f\u0a66-\u0a6f]+', ' ', clean_title)
     
     clean_title = re.sub(r'[,\.\-–—:!?]+', ' ', clean_title)
     clean_title = re.sub(r'\s+', ' ', clean_title).strip()
@@ -603,14 +728,24 @@ async def parse_voice_to_task(
     # Resolve keys with auto-detection
     raw_gemini = (gemini_api_key or settings.effective_gemini_key or os.environ.get("GEMINI_API_KEY", "")).strip()
     raw_openai = (openai_api_key or settings.effective_openai_key or os.environ.get("OPENAI_API_KEY", "")).strip()
-    raw_groq = (groq_api_key or settings.GROQ_API_KEY or os.environ.get("GROQ_API_KEY", "")).strip()
+    raw_groq = (groq_api_key or settings.effective_groq_key or settings.GROQ_API_KEY or os.environ.get("GROQ_API_KEY", "")).strip()
 
-    # If an OpenAI key was provided in Gemini field, alias it to OpenAI
+    # Smart key detection and cross-aliasing
     if raw_gemini.startswith("sk-") and not raw_openai:
         raw_openai = raw_gemini
         raw_gemini = ""
+    elif raw_gemini.startswith("gsk_") and not raw_groq:
+        raw_groq = raw_gemini
+        raw_gemini = ""
 
-    # 1. Try Google Gemini (gemini-2.0-flash / gemini-1.5-flash)
+    if raw_openai.startswith("AIzaSy") and not raw_gemini:
+        raw_gemini = raw_openai
+        raw_openai = ""
+    elif raw_openai.startswith("gsk_") and not raw_groq:
+        raw_groq = raw_openai
+        raw_openai = ""
+
+    # 1. Try Google Gemini (gemini-3.5-flash / gemini-flash-lite-latest / gemini-2.0-flash)
     if raw_gemini and len(raw_gemini) > 10 and not raw_gemini.startswith("AIzaSyDXYy"):
         try:
             from google import genai
@@ -618,25 +753,29 @@ async def parse_voice_to_task(
             client = genai.Client(api_key=raw_gemini)
             prompt = f"{ref_info}\nUser Voice Transcript: \"{transcript}\""
             
-            try:
-                response = client.models.generate_content(
-                    model="gemini-2.0-flash",
-                    contents=f"{SYSTEM_PROMPT}\n\n{prompt}",
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        temperature=0.0
+            gemini_models_to_try = [
+                "gemini-3.5-flash",
+                "gemini-flash-lite-latest",
+                "gemini-3.5-flash-lite",
+                "gemini-2.0-flash",
+                "gemini-1.5-flash"
+            ]
+            response = None
+            for g_model in gemini_models_to_try:
+                try:
+                    response = client.models.generate_content(
+                        model=g_model,
+                        contents=f"{SYSTEM_PROMPT}\n\n{prompt}",
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            temperature=0.0
+                        )
                     )
-                )
-            except Exception as e_20:
-                logger.info(f"Gemini 2.0 Flash parse retry with 1.5-flash: {e_20}")
-                response = client.models.generate_content(
-                    model="gemini-1.5-flash",
-                    contents=f"{SYSTEM_PROMPT}\n\n{prompt}",
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        temperature=0.0
-                    )
-                )
+                    if response and response.text:
+                        break
+                except Exception as g_err:
+                    logger.info(f"Gemini model {g_model} fallback: {g_err}")
+                    continue
 
             if response and response.text:
                 cleaned_text = response.text.strip()
@@ -657,7 +796,7 @@ async def parse_voice_to_task(
     if raw_openai and len(raw_openai) > 10:
         try:
             from openai import OpenAI
-            client = OpenAI(api_key=raw_openai)
+            client = OpenAI(api_key=raw_openai, max_retries=0, timeout=6.0)
             prompt = f"{ref_info}\nUser Voice Transcript: \"{transcript}\""
             
             completion = client.chat.completions.create(
@@ -677,27 +816,43 @@ async def parse_voice_to_task(
         except Exception as e:
             logger.warning(f"OpenAI task parsing fallback: {e}")
 
-    # 3. Try Groq LLM (Llama 3.3 70B)
+    # 3. Try Groq LLM (OpenAI-compatible / Qwen / Llama on Groq)
     if raw_groq and len(raw_groq) > 10:
         try:
             from groq import Groq
-            client = Groq(api_key=raw_groq)
+            client = Groq(api_key=raw_groq, max_retries=0, timeout=6.0)
             prompt = f"{ref_info}\nUser Voice Transcript: \"{transcript}\""
             
-            completion = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.0
-            )
-            raw_json = completion.choices[0].message.content
-            parsed = json.loads(raw_json)
-            parsed["original_transcript"] = transcript
-            logger.info(f"Groq parsed task successfully: {parsed.get('title')}")
-            return ExtractedTask(**parsed)
+            groq_models_to_try = [
+                "openai/gpt-oss-120b",
+                "qwen/qwen3.8-27b",
+                "llama-3.3-70b-versatile",
+                "llama3-70b-8192"
+            ]
+            completion = None
+            for groq_model in groq_models_to_try:
+                try:
+                    completion = client.chat.completions.create(
+                        model=groq_model,
+                        messages=[
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "user", "content": prompt}
+                        ],
+                        response_format={"type": "json_object"},
+                        temperature=0.0
+                    )
+                    if completion and completion.choices:
+                        break
+                except Exception as groq_err:
+                    logger.info(f"Groq model {groq_model} fallback: {groq_err}")
+                    continue
+
+            if completion and completion.choices:
+                raw_json = completion.choices[0].message.content
+                parsed = json.loads(raw_json)
+                parsed["original_transcript"] = transcript
+                logger.info(f"Groq parsed task successfully: {parsed.get('title')}")
+                return ExtractedTask(**parsed)
         except Exception as e:
             logger.warning(f"Groq task parsing fallback: {e}")
 

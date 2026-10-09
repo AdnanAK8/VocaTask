@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { X, Key, Check, ExternalLink, ShieldCheck, Sparkles, Bell, Volume2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Key, Check, ExternalLink, ShieldCheck, Sparkles, Bell, Volume2, Server } from 'lucide-react';
+import { api } from '../services/api';
 import {
   getNotificationPermission,
   requestNotificationPermission,
@@ -19,6 +20,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>(
     getNotificationPermission
   );
+  const [serverStatus, setServerStatus] = useState<{
+    backend_ai_configured: boolean;
+    provider: string;
+    has_gemini: boolean;
+    has_openai: boolean;
+    has_groq: boolean;
+    message: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      api.getVoiceStatus().then(setServerStatus).catch(() => {});
+    }
+  }, [isOpen]);
 
   const handleEnableNotifications = async () => {
     const perm = await requestNotificationPermission();
@@ -75,13 +90,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         {/* Content */}
         <form onSubmit={handleSave} className="p-6 space-y-4">
           {/* Status info */}
-          <div className="p-3.5 rounded-2xl bg-indigo-950/40 border border-indigo-800/40 text-xs text-slate-300 space-y-1.5">
-            <div className="flex items-center gap-2 text-indigo-300 font-semibold">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-              <span>AI Task Parsing Settings</span>
+          <div className={`p-3.5 rounded-2xl border text-xs space-y-1.5 ${
+            serverStatus?.backend_ai_configured
+              ? 'bg-emerald-950/40 border-emerald-800/40 text-emerald-200'
+              : 'bg-indigo-950/40 border-indigo-800/40 text-slate-300'
+          }`}>
+            <div className="flex items-center justify-between font-semibold">
+              <div className="flex items-center gap-2">
+                {serverStatus?.backend_ai_configured ? (
+                  <Server className="w-3.5 h-3.5 text-emerald-400" />
+                ) : (
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                )}
+                <span>AI Task Parsing Status</span>
+              </div>
+              {serverStatus && (
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                  serverStatus.backend_ai_configured
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                }`}>
+                  {serverStatus.backend_ai_configured
+                    ? `Server AI: ${serverStatus.provider.toUpperCase()}`
+                    : 'Built-in Fast AI'}
+                </span>
+              )}
             </div>
-            <p className="text-[11px] text-slate-400">
-              Voice recognition runs directly on your device via the browser with zero latency. You can optionally provide an API key below for deep LLM reasoning, or leave empty to use the fast built-in multilingual parser.
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              {serverStatus?.backend_ai_configured
+                ? 'Backend cloud AI is active from backend/.env. Team members do NOT need to enter personal browser keys—your backend automatically handles AI task parsing for everyone.'
+                : 'Fast multilingual AI parsing runs on device with zero latency. Personal keys below are optional and only needed if running in browser-only mode.'}
             </p>
           </div>
 
@@ -191,7 +229,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
 
           <div className="pt-2 flex items-center gap-2 text-[11px] text-slate-400">
             <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-            <span>Keys are stored locally in your browser and never shared.</span>
+            <span>Personal browser keys are optional overrides stored locally and never shared.</span>
           </div>
 
           {/* Save Button */}

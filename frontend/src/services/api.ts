@@ -143,8 +143,41 @@ function polishTaskTitle(title: string): string {
     return `Pay ${toTitleCase(mPay[1].trim())}`;
   }
 
+  // 8. Seminar / Webinar / Workshop / Conference / Presentation
+  const mEvent = cleaned.match(/^(?:attend|join|participate\s+in)?\s*(?:a\s+)?(seminar|webinar|workshop|conference|presentation|demo|symposium)(?:\s+(?:hai|attend|karna))?$/i);
+  if (mEvent) {
+    return `Attend ${toTitleCase(mEvent[1])}`;
+  }
+  if (['seminar', 'webinar', 'workshop', 'conference', 'presentation', 'demo'].includes(cleaned.toLowerCase())) {
+    return `Attend ${toTitleCase(cleaned)}`;
+  }
+  const mEventTopic = cleaned.match(/^(?:attend\s+)?(.*?)\s+(seminar|webinar|workshop|conference|presentation)(?:\s+(?:hai|attend|karna))?$/i);
+  if (mEventTopic) {
+    const topic = mEventTopic[1].trim();
+    const eventWord = toTitleCase(mEventTopic[2].trim());
+    if (!['i have a', 'i have an', 'have a', 'have an', 'a', 'an', 'the', 'my', 'mera', 'meri', 'ek'].includes(topic.toLowerCase())) {
+      return toTitleCase(`Attend ${topic} ${eventWord}`);
+    }
+    return `Attend ${eventWord}`;
+  }
+
   return toTitleCase(cleaned);
 }
+
+const MONTH_NAME_TO_NUM: Record<string, number> = {
+  january: 1, jan: 1, 'जनवरी': 1, 'ਜਨਵਰੀ': 1, janvari: 1,
+  february: 2, feb: 2, 'फ़रवरी': 2, 'फरवरी': 2, 'ਫ਼ਰਵਰੀ': 2, 'ਫਰਵਰੀ': 2, farvari: 2,
+  march: 3, mar: 3, 'मार्च': 3, 'ਮਾਰਚ': 3,
+  april: 4, apr: 4, 'अप्रैल': 4, 'ਅਪ੍ਰੈਲ': 4,
+  may: 5, 'मई': 5, 'ਮਈ': 5, mai: 5,
+  june: 6, jun: 6, 'जून': 6, 'ਜੂਨ': 6,
+  july: 7, jul: 7, 'जुलाई': 7, 'ਜੁਲਾਈ': 7,
+  august: 8, aug: 8, 'अगस्त': 8, 'ਅਗਸਤ': 8, agast: 8,
+  september: 9, sep: 9, sept: 9, 'सितंबर': 9, 'ਸਤੰਬਰ': 9, sitambar: 9,
+  october: 10, oct: 10, 'अक्टूबर': 10, 'अक्तूबर': 10, 'ਅਕਤੂਬਰ': 10, aktubar: 10,
+  november: 11, nov: 11, 'नवंबर': 11, 'ਨਵੰਬਰ': 11, navambar: 11,
+  december: 12, dec: 12, 'दिसंबर': 12, 'ਦਸੰਬਰ': 12, disambar: 12,
+};
 
 export function heuristicParseTask(transcript: string): ExtractedTask {
   const textLower = transcript.toLowerCase();
@@ -152,55 +185,105 @@ export function heuristicParseTask(transcript: string): ExtractedTask {
 
   // 1. Date resolution
   let scheduledDate: string | null = null;
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  let matchedDateStr = '';
 
-  const dayAfter = new Date(now);
-  dayAfter.setDate(dayAfter.getDate() + 2);
+  const monthKeys = Object.keys(MONTH_NAME_TO_NUM).sort((a, b) => b.length - a.length);
+  const monthPattern = monthKeys.map((k) => k.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')).join('|');
 
-  const in3Days = new Date(now);
-  in3Days.setDate(in3Days.getDate() + 3);
+  const reDayMonth = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?(${monthPattern})(?:\\s+(\\d{4}))?\\b`, 'i');
+  const reMonthDay = new RegExp(`\\b(${monthPattern})\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:\\s*,?\\s*(\\d{4}))?\\b`, 'i');
+  const reNumericDate = /\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b/;
 
-  const nextWeek = new Date(now);
-  nextWeek.setDate(nextWeek.getDate() + 7);
+  const mCalDayMonth = textLower.match(reDayMonth);
+  const mCalMonthDay = textLower.match(reMonthDay);
 
-  const weekdayMap: Record<string, number> = {
-    monday: 1, somwar: 1, 'ਸੋਮਵਾਰ': 1, 'सोमवार': 1,
-    tuesday: 2, mangalwar: 2, 'ਮੰਗਲਵਾਰ': 2, 'मंगलवार': 2,
-    wednesday: 3, budhwar: 3, 'ਬੁੱਧਵਾਰ': 3, 'बुधवार': 3,
-    thursday: 4, guruwar: 4, veervar: 4, 'ਵੀਰਵਾਰ': 4, 'गुरुवार': 4,
-    friday: 5, shukrawar: 5, 'ਸ਼ੁੱਕਰਵਾਰ': 5, 'शुक्रवार': 5,
-    saturday: 6, shaniwar: 6, 'ਸ਼ਨਿੱਚਰਵਾਰ': 6, 'शनिवार': 6,
-    sunday: 0, ravivar: 0, aitwar: 0, 'ਐਤਵਾਰ': 0, 'रविवार': 0,
-  };
-
-  let matchedWeekday: number | null = null;
-  for (const [dayName, dayIdx] of Object.entries(weekdayMap)) {
-    if (new RegExp(`\\b${dayName}\\b`, 'i').test(textLower)) {
-      matchedWeekday = dayIdx;
-      break;
+  if (mCalDayMonth) {
+    const dVal = parseInt(mCalDayMonth[1], 10);
+    const mName = mCalDayMonth[2].toLowerCase();
+    const monVal = MONTH_NAME_TO_NUM[mName] || 10;
+    const yVal = mCalDayMonth[3] ? parseInt(mCalDayMonth[3], 10) : now.getFullYear();
+    if (dVal >= 1 && dVal <= 31 && monVal >= 1 && monVal <= 12) {
+      const d = new Date(yVal, monVal - 1, dVal);
+      scheduledDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      matchedDateStr = mCalDayMonth[0];
+    }
+  } else if (mCalMonthDay) {
+    const mName = mCalMonthDay[1].toLowerCase();
+    const dVal = parseInt(mCalMonthDay[2], 10);
+    const monVal = MONTH_NAME_TO_NUM[mName] || 10;
+    const yVal = mCalMonthDay[3] ? parseInt(mCalMonthDay[3], 10) : now.getFullYear();
+    if (dVal >= 1 && dVal <= 31 && monVal >= 1 && monVal <= 12) {
+      const d = new Date(yVal, monVal - 1, dVal);
+      scheduledDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      matchedDateStr = mCalMonthDay[0];
+    }
+  } else {
+    const mNum = textLower.match(reNumericDate);
+    if (mNum) {
+      const dVal = parseInt(mNum[1], 10);
+      const monVal = parseInt(mNum[2], 10);
+      let yVal = mNum[3] ? parseInt(mNum[3], 10) : now.getFullYear();
+      if (yVal < 100) yVal += 2000;
+      if (dVal >= 1 && dVal <= 31 && monVal >= 1 && monVal <= 12) {
+        const d = new Date(yVal, monVal - 1, dVal);
+        scheduledDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        matchedDateStr = mNum[0];
+      }
     }
   }
 
-  if (['parson', 'day after tomorrow', 'ਪਰਸੋਂ', 'परसों'].some((k) => textLower.includes(k))) {
-    scheduledDate = dayAfter.toISOString().split('T')[0];
-  } else if (['kal', 'tomorrow', 'ਕੱਲ੍ਹ', 'कल'].some((k) => textLower.includes(k))) {
-    scheduledDate = tomorrow.toISOString().split('T')[0];
-  } else if (['aaj', 'today', 'tonight', 'aaj raat', 'ਅੱਜ', 'आज'].some((k) => textLower.includes(k))) {
-    scheduledDate = now.toISOString().split('T')[0];
-  } else if (['3 din baad', 'in 3 days'].some((k) => textLower.includes(k))) {
-    scheduledDate = in3Days.toISOString().split('T')[0];
-  } else if (['agle hafte', 'next week', 'ਅਗਲੇ ਹਫ਼ਤੇ'].some((k) => textLower.includes(k))) {
-    scheduledDate = nextWeek.toISOString().split('T')[0];
-  } else if (matchedWeekday !== null) {
-    const currentDay = now.getDay();
-    let daysToAdd = (matchedWeekday - currentDay + 7) % 7;
-    if (daysToAdd === 0) daysToAdd = 7;
-    const targetDate = new Date(now);
-    targetDate.setDate(targetDate.getDate() + daysToAdd);
-    scheduledDate = targetDate.toISOString().split('T')[0];
-  } else {
-    scheduledDate = tomorrow.toISOString().split('T')[0];
+  // Fallback to relative dates
+  if (!scheduledDate) {
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const dayAfter = new Date(now);
+    dayAfter.setDate(dayAfter.getDate() + 2);
+
+    const in3Days = new Date(now);
+    in3Days.setDate(in3Days.getDate() + 3);
+
+    const nextWeek = new Date(now);
+    nextWeek.setDate(nextWeek.getDate() + 7);
+
+    const weekdayMap: Record<string, number> = {
+      monday: 1, somwar: 1, 'ਸੋਮਵਾਰ': 1, 'सोमवार': 1,
+      tuesday: 2, mangalwar: 2, 'ਮੰਗਲਵਾਰ': 2, 'मंगलवार': 2,
+      wednesday: 3, budhwar: 3, 'ਬੁੱਧਵਾਰ': 3, 'बुधवार': 3,
+      thursday: 4, guruwar: 4, veervar: 4, 'ਵੀਰਵਾਰ': 4, 'गुरुवार': 4,
+      friday: 5, shukrawar: 5, 'ਸ਼ੁੱਕਰਵਾਰ': 5, 'शुक्रवार': 5,
+      saturday: 6, shaniwar: 6, 'ਸ਼ਨਿੱਚਰਵਾਰ': 6, 'शनिवार': 6,
+      sunday: 0, ravivar: 0, aitwar: 0, 'ਐਤਵਾਰ': 0, 'रविवार': 0,
+    };
+
+    let matchedWeekday: number | null = null;
+    for (const [dayName, dayIdx] of Object.entries(weekdayMap)) {
+      if (new RegExp(`\\b${dayName}\\b`, 'i').test(textLower)) {
+        matchedWeekday = dayIdx;
+        break;
+      }
+    }
+
+    if (['parson', 'day after tomorrow', 'ਪਰਸੋਂ', 'परसों'].some((k) => textLower.includes(k))) {
+      scheduledDate = dayAfter.toISOString().split('T')[0];
+    } else if (['kal', 'tomorrow', 'ਕੱਲ੍ਹ', 'कल'].some((k) => textLower.includes(k))) {
+      scheduledDate = tomorrow.toISOString().split('T')[0];
+    } else if (['aaj', 'today', 'tonight', 'aaj raat', 'ਅੱਜ', 'आज'].some((k) => textLower.includes(k))) {
+      scheduledDate = now.toISOString().split('T')[0];
+    } else if (['3 din baad', 'in 3 days'].some((k) => textLower.includes(k))) {
+      scheduledDate = in3Days.toISOString().split('T')[0];
+    } else if (['agle hafte', 'next week', 'ਅਗਲੇ ਹਫ਼ਤੇ'].some((k) => textLower.includes(k))) {
+      scheduledDate = nextWeek.toISOString().split('T')[0];
+    } else if (matchedWeekday !== null) {
+      const currentDay = now.getDay();
+      let daysToAdd = (matchedWeekday - currentDay + 7) % 7;
+      if (daysToAdd === 0) daysToAdd = 7;
+      const targetDate = new Date(now);
+      targetDate.setDate(targetDate.getDate() + daysToAdd);
+      scheduledDate = targetDate.toISOString().split('T')[0];
+    } else {
+      scheduledDate = tomorrow.toISOString().split('T')[0];
+    }
   }
 
   // 2. Time resolution
@@ -218,10 +301,18 @@ export function heuristicParseTask(transcript: string): ExtractedTask {
     normalizedText = normalizedText.replace(re, `${num} $1`);
   });
 
+  // Clean matched calendar date and ordinal words from time resolution so date numbers (e.g. 21) are NEVER treated as hour!
+  let textForTime = normalizedText;
+  if (matchedDateStr) {
+    textForTime = textForTime.replace(new RegExp(`(?:\\b(?:on|at|for)\\s+)?${matchedDateStr.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}`, 'gi'), ' ');
+  }
+  textForTime = textForTime.replace(/\b\d{1,2}(?:st|nd|rd|th)\b/gi, ' ');
+  textForTime = textForTime.replace(/\b(?:in\s+)?\d{1,2}\s+(?:days?|din|hafte|weeks?)\b/gi, ' ');
+
   // Relative minutes or hours ("in 30 minutes", "aadhe ghante baad", "1 ghante baad")
-  const mRelMin = normalizedText.match(/\b(?:in\s+)?(\d{1,2})\s*(?:min|mins|minutes|minute)\b|\b(\d{1,2})\s*minute\s+baad\b/i);
-  const mRelHour = normalizedText.match(/\b(?:in\s+)?(\d{1,2})\s*(?:hr|hrs|hour|hours)\b|\b(\d{1,2})\s*ghante?\s+baad\b/i);
-  if (normalizedText.includes('aadhe ghante') || normalizedText.includes('half an hour')) {
+  const mRelMin = textForTime.match(/\b(?:in\s+)?(\d{1,2})\s*(?:min|mins|minutes|minute)\b|\b(\d{1,2})\s*minute\s+baad\b/i);
+  const mRelHour = textForTime.match(/\b(?:in\s+)?(\d{1,2})\s*(?:hr|hrs|hour|hours)\b|\b(\d{1,2})\s*ghante?\s+baad\b/i);
+  if (textForTime.includes('aadhe ghante') || textForTime.includes('half an hour')) {
     const t = new Date(now.getTime() + 30 * 60000);
     scheduledTime = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
     scheduledDate = t.toISOString().split('T')[0];
@@ -235,20 +326,20 @@ export function heuristicParseTask(transcript: string): ExtractedTask {
     const t = new Date(now.getTime() + hrs * 3600000);
     scheduledTime = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
     scheduledDate = t.toISOString().split('T')[0];
-  } else if (/\b(dedh|ਡੇਢ|डेढ़)\s*(?:baje|बजे|ਵਜੇ)?\b/i.test(normalizedText)) {
+  } else if (/\b(dedh|ਡੇਢ|डेढ़)\s*(?:baje|बजे|ਵਜੇ)?\b/i.test(textForTime)) {
     parsedHour = 1;
     parsedMinutes = 30;
     const h = isAfternoon || isPm ? 13 : 1;
     scheduledTime = `${String(h).padStart(2, '0')}:30`;
-  } else if (/\b(dhaai|dhayi|ਢਾਈ|ढाई)\s*(?:baje|बजे|ਵਜੇ)?\b/i.test(normalizedText)) {
+  } else if (/\b(dhaai|dhayi|ਢਾਈ|ढाई)\s*(?:baje|बजे|ਵਜੇ)?\b/i.test(textForTime)) {
     parsedHour = 2;
     parsedMinutes = 30;
     const h = isAfternoon || isPm ? 14 : 2;
     scheduledTime = `${String(h).padStart(2, '0')}:30`;
   } else {
-    const mHalf = normalizedText.match(/\b(?:sadhe|saadhe|ਸਾਢੇ|साढ़े)\s+(\d{1,2})/i);
-    const mSava = normalizedText.match(/\b(?:sava|sawwa|ਸਵਾ|सवा)\s+(\d{1,2})/i);
-    const mPaune = normalizedText.match(/\b(?:paune|pauna|ਪੌਣੇ|पौने)\s+(\d{1,2})/i);
+    const mHalf = textForTime.match(/\b(?:sadhe|saadhe|ਸਾਢੇ|साढ़े)\s+(\d{1,2})/i);
+    const mSava = textForTime.match(/\b(?:sava|sawwa|ਸਵਾ|सवा)\s+(\d{1,2})/i);
+    const mPaune = textForTime.match(/\b(?:paune|pauna|ਪੌਣੇ|पौने)\s+(\d{1,2})/i);
 
     if (mHalf) {
       parsedHour = parseInt(mHalf[1], 10);
@@ -261,10 +352,20 @@ export function heuristicParseTask(transcript: string): ExtractedTask {
       parsedHour = h > 1 ? h - 1 : 12;
       parsedMinutes = 45;
     } else {
-      const timeMatch = normalizedText.match(/(\d{1,2})(?::(\d{2}))?\s*(?:baje|बजे|ਵਜੇ|pm|am|o'clock)?/i);
-      if (timeMatch) {
-        parsedHour = parseInt(timeMatch[1], 10);
-        if (timeMatch[2]) parsedMinutes = parseInt(timeMatch[2], 10);
+      // Require time evidence so bare date numbers or counts are not grabbed
+      const mColon = textForTime.match(/\b(\d{1,2}):(\d{2})\s*(?:pm|am|p\.m\.|a\.m\.)?/i);
+      const mMarker = textForTime.match(/\b(\d{1,2})(?::(\d{2}))?\s*(?:baje|बजे|ਵਜੇ|pm|am|p\.m\.|a\.m\.|o'clock)\b/i);
+      const mPrep = textForTime.match(/\b(?:at|around|sharply\s+at|subah|subh|shaam|sham|raat|morning|evening|night|सवेरे|सुबह|शाम|रात|ਸਵੇਰੇ|ਸ਼ਾਮ|ਰਾਤ)\s+(\d{1,2})(?::(\d{2}))?\b/i);
+
+      if (mColon) {
+        parsedHour = parseInt(mColon[1], 10);
+        parsedMinutes = parseInt(mColon[2], 10);
+      } else if (mMarker) {
+        parsedHour = parseInt(mMarker[1], 10);
+        if (mMarker[2]) parsedMinutes = parseInt(mMarker[2], 10);
+      } else if (mPrep) {
+        parsedHour = parseInt(mPrep[1], 10);
+        if (mPrep[2]) parsedMinutes = parseInt(mPrep[2], 10);
       }
     }
 
@@ -293,13 +394,13 @@ export function heuristicParseTask(transcript: string): ExtractedTask {
 
   // 3. Category detection
   let category: CategoryType = 'general';
-  if (['dbms', 'database', 'assignment', 'study', 'exam', 'padhna', 'homework', 'class', 'college', 'school', 'test', 'course', 'ਪੜ੍ਹਨਾ', 'ਪੜ੍ਹਾਈ', 'पढ़ना'].some((w) => textLower.includes(w))) {
+  if (['dbms', 'database', 'assignment', 'study', 'exam', 'padhna', 'homework', 'class', 'college', 'school', 'test', 'course', 'lecture', 'seminar', 'webinar', 'workshop', 'ਪੜ੍ਹਨਾ', 'ਪੜ੍ਹਾਈ', 'पढ़ना'].some((w) => textLower.includes(w))) {
     category = 'study';
   } else if (['mom', 'dad', 'mother', 'father', 'friend', 'rahul', 'party', 'dinner', 'lunch', 'birthday', 'family', 'मम्मी', 'पापा', 'दोस्त'].some((w) => textLower.includes(w))) {
     category = 'personal';
   } else if (['gym', 'workout', 'exercise', 'walk', 'badminton', 'running', 'medicine', 'doctor', 'dentist', 'health', 'दवा', 'डॉक्टर'].some((w) => textLower.includes(w))) {
     category = 'health';
-  } else if (['meeting', 'project', 'office', 'client', 'boss', 'work', 'presentation', 'email', 'report', 'standup'].some((w) => textLower.includes(w))) {
+  } else if (['meeting', 'project', 'office', 'client', 'boss', 'work', 'presentation', 'interview', 'conference', 'email', 'report', 'standup'].some((w) => textLower.includes(w))) {
     category = 'work';
   } else if (['bill', 'recharge', 'fee', 'pay', 'bank', 'money', 'rent', 'salary', 'पैसे', 'बिल'].some((w) => textLower.includes(w))) {
     category = 'finance';
@@ -320,18 +421,30 @@ export function heuristicParseTask(transcript: string): ExtractedTask {
 
   // 5. Clean Title
   let cleanTitle = transcript;
+
+  if (matchedDateStr) {
+    cleanTitle = cleanTitle.replace(new RegExp(`(?:\\b(?:on|at|for)\\s+)?${matchedDateStr.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}`, 'gi'), ' ');
+  }
+  cleanTitle = cleanTitle.replace(reDayMonth, ' ');
+  cleanTitle = cleanTitle.replace(reMonthDay, ' ');
+  cleanTitle = cleanTitle.replace(reNumericDate, ' ');
+
   const stripPhrases = [
+    'i have a', 'i have an', 'i have', 'there is a', 'there is an', 'we have a',
+    'mera ek', 'meri ek', 'ek', 'mujhko',
     'remind me to', 'remind me', 'tomorrow at', 'tomorrow evening', 'tomorrow morning', 'tomorrow night', 'tomorrow',
     'today at', 'today evening', 'today morning', 'today night', 'today', 'kal shaam', 'kal subah', 'kal raat', 'kal dopahar', 'kal',
     'aaj shaam', 'aaj subah', 'aaj raat', 'aaj', 'parson', 'karna hai', 'karni hai', 'jana hai', 'jani hai', 'dena hai', 'deni hai',
     'karna', 'jana', 'hai', 'baje', 'कल सुबह', 'कल शाम', 'कल रात', 'कल', 'आज सुबह', 'आज शाम', 'आज', 'परसों', 'ਕੱਲ੍ਹ ਸ਼ਾਮ', 'ਕੱਲ੍ਹ ਸਵੇਰੇ', 'ਕੱਲ੍ਹ',
   ];
   stripPhrases.forEach((p) => {
-    cleanTitle = cleanTitle.replace(new RegExp(`\\b${p.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'gi'), '');
-    cleanTitle = cleanTitle.replace(p, '');
+    cleanTitle = cleanTitle.replace(new RegExp(`\\b${p.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'gi'), ' ');
   });
-  cleanTitle = cleanTitle.replace(/\b\d{1,2}(?::\d{2})?\s*(?:baje|बजे|ਵਜੇ|pm|am)?\b/gi, '');
-  cleanTitle = cleanTitle.replace(/[\d\u0966-\u096F\u0A66-\u0A6F]+/g, '');
+
+  // Clean stray ordinals like "st", "nd", "rd", "th"
+  cleanTitle = cleanTitle.replace(/\b(?:st|nd|rd|th)\b/gi, ' ');
+  cleanTitle = cleanTitle.replace(/\b\d{1,2}(?::\d{2})?\s*(?:baje|बजे|ਵਜੇ|pm|am)?\b/gi, ' ');
+  cleanTitle = cleanTitle.replace(/[\d\u0966-\u096F\u0A66-\u0A6F]+/g, ' ');
   cleanTitle = cleanTitle.replace(/[\s,.:!?]+/g, ' ').trim();
 
   cleanTitle = polishTaskTitle(cleanTitle);
@@ -727,4 +840,37 @@ export const api = {
       localStorage.setItem('voicetasks_cache', JSON.stringify(list.filter((t) => t.id !== id)));
     }
   },
+
+  /**
+   * Fetches backend AI and voice service status.
+   */
+  async getVoiceStatus(): Promise<{
+    backend_ai_configured: boolean;
+    provider: string;
+    has_gemini: boolean;
+    has_openai: boolean;
+    has_groq: boolean;
+    message: string;
+  }> {
+    try {
+      const url = getApiUrl('/voice/status');
+      if (url) {
+        const res = await fetch(url);
+        if (res.ok) {
+          return await res.json();
+        }
+      }
+    } catch {
+      // offline or unreachable
+    }
+    return {
+      backend_ai_configured: false,
+      provider: 'builtin',
+      has_gemini: false,
+      has_openai: false,
+      has_groq: false,
+      message: 'Fast built-in multilingual parser active',
+    };
+  },
 };
+

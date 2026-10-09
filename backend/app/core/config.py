@@ -1,6 +1,14 @@
 import os
 from typing import List
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
+
+# Ensure local backend/.env values take precedence over stale operating system environment variables
+_env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env")
+if os.path.exists(_env_path):
+    load_dotenv(_env_path, override=True)
+else:
+    load_dotenv(override=True)
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "VoiceTasks AI API"
@@ -28,24 +36,48 @@ class Settings(BaseSettings):
 
     @property
     def effective_gemini_key(self) -> str:
-        """Returns the Gemini API key if configured and not an OpenAI sk- key."""
-        if self.GEMINI_API_KEY and not self.GEMINI_API_KEY.startswith("sk-"):
-            return self.GEMINI_API_KEY.strip()
-        if self.OPENAI_API_KEY and self.OPENAI_API_KEY.startswith("AIzaSy"):
-            return self.OPENAI_API_KEY.strip()
+        """Returns the Gemini API key if configured and valid, filtering out placeholder dummies and OpenAI keys."""
+        candidates = [self.GEMINI_API_KEY, os.environ.get("GEMINI_API_KEY", ""), self.OPENAI_API_KEY]
+        for key in candidates:
+            k = (key or "").strip(" \t\r\n\"'")
+            if (k.startswith("AIzaSy") or k.startswith("AQ.")) and not k.startswith("AIzaSyDXYy") and len(k) > 20:
+                return k
         return ""
 
     @property
     def effective_openai_key(self) -> str:
         """Returns the OpenAI API key if configured or if an sk- key was entered in GEMINI_API_KEY."""
-        if self.OPENAI_API_KEY and (self.OPENAI_API_KEY.startswith("sk-") or len(self.OPENAI_API_KEY) > 20):
-            return self.OPENAI_API_KEY.strip()
-        if self.GEMINI_API_KEY and self.GEMINI_API_KEY.startswith("sk-"):
-            return self.GEMINI_API_KEY.strip()
+        candidates = [self.OPENAI_API_KEY, os.environ.get("OPENAI_API_KEY", ""), self.GEMINI_API_KEY, os.environ.get("GEMINI_API_KEY", "")]
+        for key in candidates:
+            k = (key or "").strip()
+            if k.startswith("sk-") and not k.startswith("sk-placeholder") and len(k) > 20:
+                return k
         return ""
+
+    @property
+    def effective_groq_key(self) -> str:
+        """Returns the Groq API key if configured or if a gsk_ key was entered."""
+        candidates = [self.GROQ_API_KEY, os.environ.get("GROQ_API_KEY", ""), self.GEMINI_API_KEY, os.environ.get("GEMINI_API_KEY", "")]
+        for key in candidates:
+            k = (key or "").strip()
+            if k.startswith("gsk_") and not k.startswith("gsk_placeholder") and len(k) > 20:
+                return k
+        return ""
+
+    @property
+    def active_ai_provider(self) -> str:
+        """Returns the name of the active AI provider configured in the backend."""
+        if self.effective_gemini_key:
+            return "gemini"
+        if self.effective_groq_key:
+            return "groq"
+        if self.effective_openai_key:
+            return "openai"
+        return "builtin"
 
     class Config:
         env_file = ".env"
         extra = "ignore"
 
 settings = Settings()
+
