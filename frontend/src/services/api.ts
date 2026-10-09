@@ -571,6 +571,7 @@ export const api = {
   async processVoiceAudio(audioBlob: Blob, language?: string): Promise<ExtractedTask> {
     // 1. Try backend server if reachable
     let backendError: string | null = null;
+    let backendResponded = false;
     try {
       const processAudioUrl = getApiUrl('/voice/process-audio');
       if (!processAudioUrl) {
@@ -588,6 +589,7 @@ export const api = {
           headers: getCustomKeyHeaders(),
           body: formData,
         });
+        backendResponded = true;
 
         const contentType = response.headers.get('content-type') || '';
         if (response.ok && contentType.includes('application/json')) {
@@ -694,9 +696,16 @@ export const api = {
       }
     }
 
-    throw new Error(
-      `${backendError || 'Audio transcription is unavailable.'} ${API_BASE ? 'Check that VITE_API_URL points to your HTTPS FastAPI backend and that backend CORS allows this frontend origin.' : 'Set VITE_API_URL to your HTTPS FastAPI backend, or add a supported user API key in Settings.'} You can also type your task.`
-    );
+    const setupHelp = backendResponded
+      ? ''
+      : API_BASE
+        ? 'Check that VITE_API_URL points to your HTTPS FastAPI backend and that backend CORS allows this frontend origin.'
+        : 'Set VITE_API_URL to your HTTPS FastAPI backend, or add a supported user API key in Settings.';
+    throw new Error([
+      backendError || 'Audio transcription is unavailable.',
+      setupHelp,
+      'You can also type your task.',
+    ].filter(Boolean).join(' '));
   },
 
   /**

@@ -110,7 +110,7 @@ async def transcribe_audio_file(
                     "Output ONLY the verbatim transcript text with no markdown formatting, explanations, or quotes."
                 )
 
-                for g_model in ["gemini-3.5-flash", "gemini-flash-lite-latest"]:
+                for g_model in ["gemini-2.0-flash", "gemini-3.5-flash", "gemini-flash-lite-latest"]:
                     try:
                         response = client.models.generate_content(
                             model=g_model,
@@ -154,7 +154,12 @@ async def transcribe_audio_file(
             except Exception as e:
                 logger.warning(f"OpenAI Whisper transcription failed: {e}")
 
+    if not any((raw_gemini, raw_openai, raw_groq)):
+        raise RuntimeError(
+            "Cloud speech transcription is not configured. Add a valid Gemini, OpenAI, or Groq key to backend/.env."
+        )
+
     raise RuntimeError(
-        "Cloud Speech-to-Text requires a valid AI API key (Google Gemini, OpenAI, or Groq). "
-        "Please provide a key in Settings or add GEMINI_API_KEY to backend/.env."
+        "Speech transcription providers are configured but could not transcribe this recording. "
+        "Check backend logs for provider errors, then retry or use the text input."
     )
