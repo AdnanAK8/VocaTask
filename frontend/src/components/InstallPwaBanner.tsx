@@ -70,13 +70,11 @@ export const InstallPwaBanner: React.FC = () => {
     };
     window.addEventListener('open-install-pwa', openInstallHandler);
 
-    const timer = window.setTimeout(() => setShowGuideModal(true), 1000);
 
     return () => {
       window.removeEventListener('beforeinstallprompt', promptHandler);
       window.removeEventListener('appinstalled', installedHandler);
       window.removeEventListener('open-install-pwa', openInstallHandler);
-      window.clearTimeout(timer);
     };
   }, [installed]);
 

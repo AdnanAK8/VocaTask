@@ -9,6 +9,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { ToastReminder } from './components/ToastReminder';
 import { useTaskReminders } from './hooks/useTaskReminders';
 import { api } from './services/api';
+import aivantaLogo from './assets/Aivanta-Logo.png';
 import type { Task, ExtractedTask, TaskCreateInput, TaskUpdateInput, PriorityType, CategoryType } from './types/task';
 
 interface TaskFormValues {
@@ -232,7 +233,14 @@ export const App = () => {
       <header className="header">
         <a className="brand" href="#tasks" aria-label="VocaTask home">
           <span className="brand-mark">V</span>
-          <span>VocaTask</span>
+          <span className="brand-text">
+            <span className="brand-name">VocaTask</span>
+            <a href='https://aivantaai.com/'>
+              <span className="brand-powered">
+              Powered by <img src={aivantaLogo} alt="AiVanta" />
+              </span>
+            </a>
+          </span>
         </a>
         <div className="header-actions">
           <button
@@ -303,50 +311,51 @@ export const App = () => {
               </button>
             </div>
             <div className="task-list" role="tabpanel">
-            {visibleTasks.length === 0 ? (
-              <div className="empty-state">
-                <span className="empty-icon"><Check size={22} /></span>
-                <h3>{tasks.length === 0 ? 'A little room to breathe' : 'Nothing here yet'}</h3>
-                <p>{tasks.length === 0 ? 'Your tasks will show up here. Add one by voice or enter it yourself.' : 'Tasks matching this filter will appear here.'}</p>
-              </div>
-            ) : visibleTasks.map((task) => (
-              <article className={`task-card ${task.status === 'completed' ? 'completed' : ''}`} key={task.id}>
-                <button
-                  className={`task-check ${task.status === 'completed' ? 'checked' : ''}`}
-                  onClick={() => void handleToggleTask(task.id)}
-                  aria-label={task.status === 'completed' ? 'Mark as pending' : 'Mark as completed'}
-                  title={task.status === 'completed' ? 'Mark as pending' : 'Mark as completed'}
-                >
-                  {task.status === 'completed' && <Check size={14} />}
-                </button>
-                <div className="task-details">
-                  <h3>{task.title}</h3>
-                  <p>
-                    {formatDate(task.scheduled_date)}
-                    {task.scheduled_time && <><span className="detail-separator">·</span><Clock3 size={12} /> {formatTime(task.scheduled_time)}</>}
-                  </p>
+              {visibleTasks.length === 0 ? (
+                <div className="empty-state">
+                  <span className="empty-icon"><Check size={22} /></span>
+                  <h3>{tasks.length === 0 ? 'A little room to breathe' : 'Nothing here yet'}</h3>
+                  <p>{tasks.length === 0 ? 'Your tasks will show up here. Add one by voice or enter it yourself.' : 'Tasks matching this filter will appear here.'}</p>
                 </div>
-                <span className={`priority-tag ${task.priority}`}>{task.priority}</span>
-                <span className={`category-tag ${task.category}`}>{task.category}</span>
-                <div className="task-actions">
+              ) : visibleTasks.map((task) => (
+                <article className={`task-card ${task.status === 'completed' ? 'completed' : ''}`} key={task.id}>
                   <button
-                    className={`task-reminder-btn ${task.reminder_required ? 'active' : 'inactive'}`}
-                    onClick={() => void handleToggleReminder(task)}
-                    aria-label={task.reminder_required ? 'Disable reminder' : 'Enable reminder'}
-                    title={task.reminder_required ? 'Reminder enabled - Click to disable' : 'Reminder disabled - Click to enable'}
+                    className={`task-check ${task.status === 'completed' ? 'checked' : ''}`}
+                    onClick={() => void handleToggleTask(task.id)}
+                    aria-label={task.status === 'completed' ? 'Mark as pending' : 'Mark as completed'}
+                    title={task.status === 'completed' ? 'Mark as pending' : 'Mark as completed'}
                   >
-                    {task.reminder_required ? <Bell size={15} /> : <BellOff size={15} />}
+                    {task.status === 'completed' && <Check size={14} />}
                   </button>
-                  <button onClick={() => openTaskForm(task)} aria-label={`Edit ${task.title}`} title="Edit task"><Pencil size={15} /></button>
-                  <button onClick={() => void handleDeleteTask(task.id)} aria-label={`Delete ${task.title}`} title="Delete task"><Trash2 size={15} /></button>
-                </div>
-              </article>
-            ))}
+                  <div className="task-details">
+                    <h3>{task.title}</h3>
+                    <p>
+                      {formatDate(task.scheduled_date)}
+                      {task.scheduled_time && <><span className="detail-separator">·</span><Clock3 size={12} /> {formatTime(task.scheduled_time)}</>}
+                    </p>
+                  </div>
+                  <span className={`priority-tag ${task.priority}`}>{task.priority}</span>
+                  <span className={`category-tag ${task.category}`}>{task.category}</span>
+                  <div className="task-actions">
+                    <button
+                      className={`task-reminder-btn ${task.reminder_required ? 'active' : 'inactive'}`}
+                      onClick={() => void handleToggleReminder(task)}
+                      aria-label={task.reminder_required ? 'Disable reminder' : 'Enable reminder'}
+                      title={task.reminder_required ? 'Reminder enabled - Click to disable' : 'Reminder disabled - Click to enable'}
+                    >
+                      {task.reminder_required ? <Bell size={15} /> : <BellOff size={15} />}
+                    </button>
+                    <button onClick={() => openTaskForm(task)} aria-label={`Edit ${task.title}`} title="Edit task"><Pencil size={15} /></button>
+                    <button onClick={() => void handleDeleteTask(task.id)} aria-label={`Delete ${task.title}`} title="Delete task"><Trash2 size={15} /></button>
+                  </div>
+                </article>
+              ))}
             </div>
           </div>
 
           {completedCount > 0 && <p className="completed-summary">{completedCount} {completedCount === 1 ? 'task' : 'tasks'} completed</p>}
         </section>
+
       </main>
 
       <nav className="bottom-nav" aria-label="Main navigation">
