@@ -62,6 +62,7 @@ export const App = () => {
   const [form, setForm] = useState<TaskFormValues>(emptyForm);
   const [formError, setFormError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [deletingIds, setDeletingIds] = useState<string[]>([]);
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all');
   const [today] = useState(() => new Date().toLocaleDateString(undefined, {
     weekday: 'long', month: 'long', day: 'numeric',
@@ -123,14 +124,22 @@ export const App = () => {
   };
 
   const handleDeleteTask = async (id: string) => {
-    try {
-      setTasks((prev) => prev.filter((t) => t.id !== id));
-      await api.deleteTask(id);
-    } catch (err) {
-      console.error('Failed to delete task:', err);
-      loadTasks();
-    }
-  };
+  if (deletingIds.includes(id)) return; // ignore double-clicks
+  setDeletingIds((prev) => [...prev, id]);
+
+  // wait for the animation (must match the CSS duration)
+  await new Promise((resolve) => setTimeout(resolve, 350));
+
+  try {
+    setTasks((prev) => prev.filter((t) => t.id !== id));
+    await api.deleteTask(id);
+  } catch (err) {
+    console.error('Failed to delete task:', err);
+    loadTasks();
+  } finally {
+    setDeletingIds((prev) => prev.filter((x) => x !== id));
+  }
+};
 
   const handleCompleteFromReminder = async (id: string) => {
     try {
@@ -318,7 +327,7 @@ export const App = () => {
                   <p>{tasks.length === 0 ? 'Your tasks will show up here. Add one by voice or enter it yourself.' : 'Tasks matching this filter will appear here.'}</p>
                 </div>
               ) : visibleTasks.map((task) => (
-                <article className={`task-card ${task.status === 'completed' ? 'completed' : ''}`} key={task.id}>
+                <article className={`task-card ${task.status === 'completed' ? 'completed' : ''} ${deletingIds.includes(task.id) ? 'deleting' : ''}`} key={task.id}>
                   <button
                     className={`task-check ${task.status === 'completed' ? 'checked' : ''}`}
                     onClick={() => void handleToggleTask(task.id)}

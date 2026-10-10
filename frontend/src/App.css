@@ -1862,3 +1862,41 @@ select:focus-visible {
     font-size: 16px;
   }
 }
+
+/* Delete animation */
+.task-card.deleting {
+  pointer-events: none;
+  animation: task-delete 0.35s ease forwards;
+}
+
+@keyframes task-delete {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+    max-height: 120px;
+  }
+
+  60% {
+    opacity: 0;
+    transform: translateX(60px) scale(0.96);
+    max-height: 120px;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(60px) scale(0.96);
+    max-height: 0;
+    min-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-top: -8px;
+    /* cancels the 8px list gap so cards below slide up smoothly */
+    border-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-card.deleting {
+    animation-duration: 0.01s;
+  }
+}
