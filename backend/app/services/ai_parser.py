@@ -754,7 +754,7 @@ async def parse_voice_to_task(
             client = genai.Client(api_key=gem_key)
             prompt = f"{ref_info}\nUser Voice Transcript: \"{transcript}\""
             
-            for g_model in ["gemini-3.5-flash", "gemini-flash-lite-latest"]:
+            for g_model in ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-3.5-flash"]:
                 try:
                     response = client.models.generate_content(
                         model=g_model,

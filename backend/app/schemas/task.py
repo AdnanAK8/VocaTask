@@ -28,6 +28,7 @@ class TaskCreate(BaseModel):
     reminder_required: bool = True
     original_transcript: Optional[str] = None
     language: Optional[str] = None
+    user_id: Optional[str] = None
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None

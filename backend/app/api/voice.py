@@ -18,17 +18,19 @@ async def get_voice_status():
     has_gemini = bool(settings.effective_gemini_key)
     has_openai = bool(settings.effective_openai_key)
     has_groq = bool(settings.effective_groq_key)
+    has_elevenlabs = bool(settings.effective_elevenlabs_key)
     provider = settings.active_ai_provider
 
     return {
-        "backend_ai_configured": bool(has_gemini or has_openai or has_groq),
+        "backend_ai_configured": bool(has_gemini or has_openai or has_groq or has_elevenlabs),
         "provider": provider,
         "has_gemini": has_gemini,
         "has_openai": has_openai,
         "has_groq": has_groq,
+        "has_elevenlabs": has_elevenlabs,
         "message": (
             f"Backend cloud AI is configured with {provider.upper()} from server .env."
-            if (has_gemini or has_openai or has_groq)
+            if (has_gemini or has_openai or has_groq or has_elevenlabs)
             else "Backend is running fast built-in multilingual AI parser."
         )
     }
@@ -39,6 +41,7 @@ async def process_text_task(
     x_groq_key: Optional[str] = Header(default=None, alias="X-Groq-Key"),
     x_gemini_key: Optional[str] = Header(default=None, alias="X-Gemini-Key"),
     x_openai_key: Optional[str] = Header(default=None, alias="X-OpenAI-Key"),
+    x_elevenlabs_key: Optional[str] = Header(default=None, alias="X-ElevenLabs-Key"),
 ):
     """
     Accepts speech-transcribed text (from browser-native Web Speech API or manual text input)
@@ -65,15 +68,22 @@ async def process_audio_task(
     x_groq_key: Optional[str] = Header(default=None, alias="X-Groq-Key"),
     x_gemini_key: Optional[str] = Header(default=None, alias="X-Gemini-Key"),
     x_openai_key: Optional[str] = Header(default=None, alias="X-OpenAI-Key"),
+    x_elevenlabs_key: Optional[str] = Header(default=None, alias="X-ElevenLabs-Key"),
 ):
     """
-    Accepts uploaded audio blob/file (webm, wav, mp3, m4a), transcribes it via Whisper / Gemini,
+    Accepts uploaded audio blob/file (webm, wav, mp3, m4a), transcribes it via ElevenLabs / Whisper / Gemini,
     and extracts structured task details.
     """
     try:
-        content = await file.read()
+        content = await file.read(settings.MAX_AUDIO_UPLOAD_BYTES + 1)
         if not content:
             raise HTTPException(status_code=400, detail="Uploaded audio file is empty.")
+        if len(content) > settings.MAX_AUDIO_UPLOAD_BYTES:
+            limit_mb = settings.MAX_AUDIO_UPLOAD_BYTES // (1024 * 1024)
+            raise HTTPException(
+                status_code=413,
+                detail=f"Audio upload exceeds the {limit_mb} MB limit.",
+            )
 
         transcript = await transcribe_audio_file(
             file_bytes=content,
@@ -81,6 +91,7 @@ async def process_audio_task(
             groq_api_key=x_groq_key,
             openai_api_key=x_openai_key,
             gemini_api_key=x_gemini_key,
+            elevenlabs_api_key=x_elevenlabs_key,
             language=language
         )
 

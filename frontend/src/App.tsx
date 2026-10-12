@@ -11,6 +11,10 @@ import { useTaskReminders } from './hooks/useTaskReminders';
 import { api } from './services/api';
 import aivantaLogo from './assets/Aivanta-Logo.png';
 import type { Task, ExtractedTask, TaskCreateInput, TaskUpdateInput, PriorityType, CategoryType } from './types/task';
+import { AuthGate } from './components/AuthGate';
+import { UserProfileMenu } from './components/UserProfileMenu';
+import { authService } from './services/authService';
+import type { User } from './types/auth';
 
 interface TaskFormValues {
   title: string;
@@ -53,6 +57,8 @@ const formatTime = (value?: string | null): string => {
 };
 
 export const App = () => {
+  const [currentUser, setCurrentUser] = useState<User | null>(() => authService.getStoredUser());
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [extractedTask, setExtractedTask] = useState<ExtractedTask | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -61,6 +67,7 @@ export const App = () => {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [form, setForm] = useState<TaskFormValues>(emptyForm);
   const [formError, setFormError] = useState('');
+  const [tasksLoadError, setTasksLoadError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [deletingIds, setDeletingIds] = useState<string[]>([]);
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all');
@@ -68,29 +75,63 @@ export const App = () => {
     weekday: 'long', month: 'long', day: 'numeric',
   }));
 
+  const handleLogout = async () => {
+    await authService.logout();
+    setCurrentUser(null);
+    setTasks([]);
+  };
+
   const loadTasks = async () => {
+    if (!currentUser) return;
     try {
       const data = await api.getTasks();
       setTasks(data);
+      setTasksLoadError('');
     } catch (err) {
       console.error('Error loading tasks:', err);
+      setTasksLoadError(err instanceof Error ? err.message : 'Could not load tasks from the backend.');
     }
   };
 
-  // Load tasks on startup
+  // Check auth session on startup
   useEffect(() => {
     let active = true;
-    api.getTasks()
-      .then((data) => {
-        if (active) setTasks(data);
+    authService.getCurrentUser()
+      .then((user) => {
+        if (active && user) {
+          setCurrentUser(user);
+        }
       })
-      .catch((err) => {
-        console.error('Error loading tasks:', err);
+      .catch(() => {})
+      .finally(() => {
+        if (active) setIsAuthChecking(false);
       });
     return () => {
       active = false;
     };
   }, []);
+
+  // Load tasks on startup or when currentUser changes
+  useEffect(() => {
+    if (!currentUser) return;
+    let active = true;
+    api.getTasks()
+      .then((data) => {
+        if (active) {
+          setTasks(data);
+          setTasksLoadError('');
+        }
+      })
+      .catch((err) => {
+        console.error('Error loading tasks:', err);
+        if (active) {
+          setTasksLoadError(err instanceof Error ? err.message : 'Could not load tasks from the backend.');
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentUser]);
 
   const handleTaskExtracted = (extracted: ExtractedTask) => {
     setIsVoiceOpen(false);
@@ -98,13 +139,10 @@ export const App = () => {
   };
 
   const handleConfirmTask = async (taskInput: TaskCreateInput) => {
-    try {
-      const created = await api.createTask(taskInput);
-      setTasks((prev) => [created, ...prev]);
-      setExtractedTask(null);
-    } catch (err) {
-      console.error('Failed to create task:', err);
-    }
+    const created = await api.createTask(taskInput);
+    setTasks((prev) => [created, ...prev]);
+    setTasksLoadError('');
+    setExtractedTask(null);
   };
 
   const handleToggleTask = async (id: string) => {
@@ -237,6 +275,27 @@ export const App = () => {
     return true;
   });
 
+  if (isAuthChecking) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4">
+        <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shadow-xl shadow-indigo-600/30 animate-pulse ring-1 ring-white/20">
+          <span className="text-white font-extrabold text-xl">V</span>
+        </div>
+        <p className="text-xs text-slate-400 mt-3 font-medium">Connecting to VocaTask AI...</p>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <AuthGate
+        onAuthenticated={(user) => {
+          setCurrentUser(user);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="app-shell">
       <header className="header">
@@ -275,14 +334,16 @@ export const App = () => {
           <button className="icon-button header-settings" onClick={() => setIsSettingsOpen(true)} aria-label="Open settings" title="Settings">
             <Settings size={18} />
           </button>
+          <UserProfileMenu user={currentUser} onLogout={handleLogout} />
         </div>
       </header>
 
       <main className="main" id="tasks">
         <section className="welcome">
-          <p className="greeting">Your day, in focus</p>
-          <h1>What do you need<br className="desktop-break" /> to get done?</h1>
+          <p className="greeting">Good day, {currentUser.name} · Your day in focus</p>
+          <h1>What do you need<br className="desktop-break" /> to get done, {currentUser.name.split(' ')[0]}?</h1>
         </section>
+        {tasksLoadError && <p className="form-error" role="alert">Backend connection failed: {tasksLoadError}</p>}
 
         <button className="voice-card" onClick={() => setIsVoiceOpen(true)}>
           <span className="voice-mic"><Mic size={25} /></span>
@@ -432,6 +493,8 @@ export const App = () => {
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+        user={currentUser}
+        onLogout={handleLogout}
       />
 
       <ToastReminder

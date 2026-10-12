@@ -164,10 +164,21 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
       if (typeof MediaRecorder !== 'undefined') {
         try {
           let mimeType = '';
-          if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
-          else if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
-          else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
-          else if (MediaRecorder.isTypeSupported('audio/ogg')) mimeType = 'audio/ogg';
+          const preferredTypes = [
+            'audio/webm;codecs=opus',
+            'audio/webm',
+            'audio/mp4',
+            'audio/aac',
+            'audio/ogg;codecs=opus',
+            'audio/ogg',
+            'audio/wav',
+          ];
+          for (const t of preferredTypes) {
+            if (typeof MediaRecorder.isTypeSupported === 'function' && MediaRecorder.isTypeSupported(t)) {
+              mimeType = t;
+              break;
+            }
+          }
           const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
           mediaRecorder.ondataavailable = (event) => {
             if (event.data && event.data.size > 0) {
@@ -237,10 +248,13 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
     }
 
     // 2. Setup Web Speech API for Real-time Visual Text Feedback Preview
+    // ponytail: Mobile browsers (Android/iOS) lock mic exclusively to getUserMedia; running
+    // SpeechRecognition concurrently causes audio-capture crash or zero-byte recording.
+    const isMobileDevice = typeof navigator !== 'undefined' && /android|iphone|ipad|ipod/i.test(navigator.userAgent || '');
     const extWin = window as unknown as ExtendedWindow;
     const SpeechRec = extWin.SpeechRecognition || extWin.webkitSpeechRecognition;
 
-    if (SpeechRec) {
+    if (SpeechRec && (!isMobileDevice || !mediaRecorderRef.current)) {
       try {
         const recognizer = new SpeechRec();
         recognizer.continuous = true;
@@ -341,8 +355,9 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
       }
     }
     if (audioChunksRef.current.length > 0) {
+      const blobType = mediaRecorderRef.current?.mimeType || audioChunksRef.current[0]?.type || 'audio/webm';
       recordedBlob = new Blob(audioChunksRef.current, {
-        type: mediaRecorderRef.current?.mimeType || 'audio/webm',
+        type: blobType,
       });
     }
 

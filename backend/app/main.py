@@ -3,8 +3,10 @@ from fastapi import FastAPI
 from mangum import Mangum
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
+from app.core.rate_limit import RateLimitMiddleware
 from app.api import tasks
 from app.api import voice
+from app.api import auth
 
 
 logging.basicConfig(
@@ -19,11 +21,16 @@ app = FastAPI(
     description="Multilingual Voice-to-Task AI Assistant API with PWA support"
 )
 
-# Enable CORS for cross-origin requests from PWA running locally or in production
+# CORS is intentionally limited to explicitly configured frontend origins.
+app.add_middleware(
+    RateLimitMiddleware,
+    requests_per_minute=settings.API_RATE_LIMIT_PER_MINUTE,
+    voice_requests_per_minute=settings.VOICE_RATE_LIMIT_PER_MINUTE,
+    audio_requests_per_minute=settings.AUDIO_RATE_LIMIT_PER_MINUTE,
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -32,6 +39,7 @@ app.add_middleware(
 # Mount API routers
 app.include_router(voice.router, prefix=settings.API_V1_STR)
 app.include_router(tasks.router, prefix=settings.API_V1_STR)
+app.include_router(auth.router, prefix=settings.API_V1_STR)
 
 @app.get("/health", tags=["Health"])
 async def health_check():
@@ -40,6 +48,7 @@ async def health_check():
         "service": settings.PROJECT_NAME,
         "version": settings.VERSION,
         "gemini_configured": bool(settings.effective_gemini_key),
+        "elevenlabs_configured": bool(settings.effective_elevenlabs_key),
         "groq_configured": bool(settings.GROQ_API_KEY),
         "openai_configured": bool(settings.effective_openai_key)
     }

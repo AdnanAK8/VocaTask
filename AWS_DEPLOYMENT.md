@@ -42,7 +42,10 @@ This guide covers the smoothest and most cost-effective methods to deploy the fu
      * `GROQ_API_KEY` = *your_groq_api_key* (optional, for Whisper/Llama)
      * `OPENAI_API_KEY` = *your_openai_api_key* (optional)
      * `GEMINI_API_KEY` = *your_gemini_api_key* (optional)
-     * `CORS_ORIGINS` = `["*"]` *(temporarily allow during setup; restrict to your Amplify URL in Step 3)*.
+   * `CORS_ORIGINS` = `["https://main.d123456abcdef.amplifyapp.com"]` (use the exact frontend origin; do not use `*`).
+   * `API_RATE_LIMIT_PER_MINUTE` = `120`
+   * `VOICE_RATE_LIMIT_PER_MINUTE` = `20`
+   * `AUDIO_RATE_LIMIT_PER_MINUTE` = `5`
 6. Click **Create & Deploy**.
 7. Once deployed, copy your **Default domain** URL (e.g., `https://xxxxxxxxxx.us-east-1.awsapprunner.com`). Verify that `https://<YOUR_APP_RUNNER_URL>/health` returns `{"status":"ok"}`.
 
@@ -68,6 +71,21 @@ This guide covers the smoothest and most cost-effective methods to deploy the fu
 ---
 
 ### Step 3: Secure CORS on Backend
+
+### Step 4: Verify API Gateway Routing and Throttling
+
+If the frontend's API URL is an `execute-api` domain, it is using API Gateway rather than the App Runner URL. In API Gateway, verify the deployed stage has a Lambda proxy integration for both `ANY /{proxy+}` and the root route, and that the stage is deployed (or auto-deploy is enabled). The FastAPI route in this repository is `/api/voice/process-audio`; a 404 from the gateway before the request reaches FastAPI means the route/integration or stage is not deployed. Re-deploy the Lambda after code changes.
+
+Configure API Gateway stage throttling as the outer rate limit. The backend also applies per-instance IP limits (`120` general API requests/minute, `20` voice requests/minute, `5` audio requests/minute); gateway throttling is necessary for a shared limit across Lambda/App Runner instances. CORS on API Gateway, if enabled there, must allow the exact Amplify/CloudFront origin, `GET, POST, PATCH, DELETE, OPTIONS`, and the headers used by the app (`content-type`, `x-user-timezone`, and any configured `x-*-key` headers).
+
+After deployment, confirm these checks from the browser Network tab:
+
+* `GET https://<BACKEND>/health` returns JSON with status `ok`.
+* `GET https://<BACKEND>/api/voice/status` returns JSON.
+* `POST https://<BACKEND>/api/voice/process-text` returns structured task JSON, not a CloudFront/API Gateway error page.
+* `POST https://<BACKEND>/api/voice/process-audio` returns structured task JSON; a `429` response indicates throttling is active.
+
+The API is still publicly reachable: rate limits and CORS reduce abuse and browser cross-origin access, but neither authenticates users or protects task data. Add user authentication and per-user task ownership before storing private or multi-user data.
 
 1. Return to **AWS App Runner** > your service > **Configuration** > **Configure service**.
 2. Update the `CORS_ORIGINS` environment variable to include your Amplify URL:

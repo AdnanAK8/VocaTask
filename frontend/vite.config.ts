@@ -1,10 +1,15 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import basicSsl from '@vitejs/plugin-basic-ssl';
+
+// ponytail: enable basicSsl when HTTPS=true or --https flag is used for Android/iOS mic testing
+const isHttps = process.env.HTTPS === 'true' || process.env.SSL === 'true' || process.argv.includes('--https');
 
 export default defineConfig({
   plugins: [
     react(),
+    ...(isHttps ? [basicSsl()] : []),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icons/*.png'],
@@ -38,6 +43,7 @@ export default defineConfig({
     })
   ],
   server: {
+    host: true, // Listen on all network interfaces (0.0.0.0) so phone can connect on Wi-Fi
     port: 5173,
     proxy: {
       '/api': {

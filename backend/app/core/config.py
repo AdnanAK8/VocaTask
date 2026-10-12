@@ -29,15 +29,17 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "VoiceTasks AI API"
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api"
-    
+
     # API Keys
     GROQ_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
-    
+    ELEVEN_LAB_API_KEY: str = ""
+    ELEVENLABS_API_KEY: str = ""
+
     # Default Timezone for resolving relative words (e.g. "kal", "tomorrow")
     DEFAULT_TIMEZONE: str = "Asia/Kolkata"
-    
+
     # Allowed CORS Origins (set via CORS_ORIGINS environment variable for production AWS/CloudFront origins)
     CORS_ORIGINS: List[str] = [
         "http://localhost:5173",
@@ -45,9 +47,36 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5173",
         "http://127.0.0.1:3000"
     ]
-    
-    # SQLite Database for lightweight local persistent storage
+
+    API_RATE_LIMIT_PER_MINUTE: int = 120
+    VOICE_RATE_LIMIT_PER_MINUTE: int = 20
+    AUDIO_RATE_LIMIT_PER_MINUTE: int = 5
+    MAX_AUDIO_UPLOAD_BYTES: int = 15 * 1024 * 1024
+
+    # Database & Storage
     DATABASE_PATH: str = "tasks.db"
+
+    # Authentication & OAuth Settings
+    JWT_SECRET_KEY: str = "voicetasks-ai-jwt-super-secret-key-production-change"
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    FACEBOOK_APP_ID: str = ""
+    FACEBOOK_APP_SECRET: str = ""
+
+    @property
+    def effective_elevenlabs_key(self) -> str:
+        """Returns the ElevenLabs API key if configured."""
+        candidates = [
+            self.ELEVEN_LAB_API_KEY,
+            self.ELEVENLABS_API_KEY,
+            os.environ.get("ELEVEN_LAB_API_KEY", ""),
+            os.environ.get("ELEVENLABS_API_KEY", ""),
+        ]
+        for key in candidates:
+            k = (key or "").strip(" \t\r\n\"'")
+            if len(k) > 10:
+                return k
+        return ""
 
     @property
     def effective_gemini_key(self) -> str:
@@ -84,6 +113,8 @@ class Settings(BaseSettings):
         """Returns the name of the active AI provider configured in the backend."""
         if self.effective_gemini_key:
             return "gemini"
+        if self.effective_elevenlabs_key:
+            return "elevenlabs"
         if self.effective_groq_key:
             return "groq"
         if self.effective_openai_key:

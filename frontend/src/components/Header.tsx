@@ -1,19 +1,31 @@
 import React from 'react';
 import { Sparkles, Globe, Download, Settings } from 'lucide-react';
+import type { User } from '../types/auth';
+import { UserProfileMenu } from './UserProfileMenu';
 
 interface HeaderProps {
   onInstallClick?: () => void;
   canInstall?: boolean;
   onOpenSettings?: () => void;
+  user?: User | null;
+  onLogout?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onInstallClick, canInstall, onOpenSettings }) => {
+export const Header: React.FC<HeaderProps> = ({
+  onInstallClick,
+  canInstall,
+  onOpenSettings,
+  user,
+  onLogout,
+}) => {
   const [greeting] = React.useState(() => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good Morning';
     if (hour < 17) return 'Good Afternoon';
     return 'Good Evening';
   });
+
+  const displayName = user?.name || 'Friend';
 
   return (
     <header className="sticky top-0 z-30 backdrop-blur-xl bg-slate-950/80 border-b border-slate-800/80 px-4 py-3 sm:px-6">
@@ -30,7 +42,7 @@ export const Header: React.FC<HeaderProps> = ({ onInstallClick, canInstall, onOp
               VocaTask <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">AI</span>
             </h1>
             <p className="text-xs text-slate-400">
-              {greeting}, <span className="text-slate-200 font-medium">Sarab</span> 👋
+              {greeting}, <span className="text-slate-200 font-medium">{displayName}</span> 👋
             </p>
           </div>
         </div>
@@ -56,10 +68,15 @@ export const Header: React.FC<HeaderProps> = ({ onInstallClick, canInstall, onOp
             <button
               onClick={onOpenSettings}
               aria-label="Settings"
-              className="p-2 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-850 active:scale-95 transition-all border border-slate-800 bg-slate-900/60"
+              className="p-2 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-800 active:scale-95 transition-all border border-slate-800 bg-slate-900/60"
             >
               <Settings className="w-4 h-4" />
             </button>
+          )}
+
+          {/* User Profile Menu */}
+          {user && onLogout && (
+            <UserProfileMenu user={user} onLogout={onLogout} />
           )}
         </div>
       </div>

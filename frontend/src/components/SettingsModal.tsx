@@ -7,15 +7,20 @@ import {
   playReminderChime,
 } from '../services/notificationService';
 
+import type { User } from '../types/auth';
+
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  user?: User | null;
+  onLogout?: () => void;
 }
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
+export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, user, onLogout }) => {
   const [groqKey, setGroqKey] = useState(localStorage.getItem('groq_api_key') || '');
   const [geminiKey, setGeminiKey] = useState(localStorage.getItem('gemini_api_key') || '');
   const [openaiKey, setOpenaiKey] = useState(localStorage.getItem('openai_api_key') || '');
+  const [elevenlabsKey, setElevenlabsKey] = useState(localStorage.getItem('elevenlabs_api_key') || '');
   const [savedNotice, setSavedNotice] = useState(false);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>(
     getNotificationPermission
@@ -26,6 +31,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
     has_gemini: boolean;
     has_openai: boolean;
     has_groq: boolean;
+    has_elevenlabs?: boolean;
     message: string;
   } | null>(null);
 
@@ -56,6 +62,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
 
     if (openaiKey.trim()) localStorage.setItem('openai_api_key', openaiKey.trim());
     else localStorage.removeItem('openai_api_key');
+
+    if (elevenlabsKey.trim()) localStorage.setItem('elevenlabs_api_key', elevenlabsKey.trim());
+    else localStorage.removeItem('elevenlabs_api_key');
 
     setSavedNotice(true);
     setTimeout(() => {
@@ -181,6 +190,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             />
           </div>
 
+          {/* ElevenLabs API Key Input */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-slate-300">ElevenLabs API Key (Scribe STT)</label>
+              <a
+                href="https://elevenlabs.io/app/settings/api-keys"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-indigo-400 hover:underline flex items-center gap-1"
+              >
+                <span>ElevenLabs Keys</span>
+                <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            </div>
+            <input
+              type="password"
+              value={elevenlabsKey}
+              onChange={(e) => setElevenlabsKey(e.target.value)}
+              placeholder="sk_..."
+              className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-4 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+            />
+            {elevenlabsKey.trim() && !elevenlabsKey.trim().startsWith('sk_') && (
+              <p className="text-[10px] text-amber-400/90 leading-tight">
+                ⚠️ Note: ElevenLabs requires the secret API key starting with <code>sk_</code> (not the 64-char API Key ID).
+              </p>
+            )}
+          </div>
+
           {/* Push Notifications & Chime Sound */}
           <div className="pt-2 border-t border-slate-800 space-y-2">
             <div className="flex items-center justify-between">
@@ -226,6 +263,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
               </button>
             </div>
           </div>
+
+          {/* Current User Account & Logout */}
+          {user && (
+            <div className="pt-2 border-t border-slate-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-300">Account & Profile</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 capitalize">
+                  {user.provider}
+                </span>
+              </div>
+              <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-white">{user.name}</p>
+                  <p className="text-[11px] text-slate-400">{user.email || user.phone || 'Authenticated'}</p>
+                </div>
+                {onLogout && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onLogout();
+                    }}
+                    className="text-xs px-2.5 py-1.5 rounded-xl text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 border border-rose-500/20 font-medium transition-colors"
+                  >
+                    Sign Out
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="pt-2 flex items-center gap-2 text-[11px] text-slate-400">
             <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />

@@ -8,7 +8,7 @@ import type { ExtractedTask, TaskCreateInput, PriorityType, CategoryType } from 
 
 interface TaskConfirmModalProps {
   extractedTask: ExtractedTask;
-  onConfirm: (task: TaskCreateInput) => void;
+  onConfirm: (task: TaskCreateInput) => Promise<void>;
   onCancel: () => void;
 }
 
@@ -23,6 +23,8 @@ export const TaskConfirmModal: React.FC<TaskConfirmModalProps> = ({
   const [priority, setPriority] = useState<PriorityType>(extractedTask.priority);
   const [category, setCategory] = useState<CategoryType>(extractedTask.category);
   const [reminder, setReminder] = useState(extractedTask.reminder_required);
+  const [saveError, setSaveError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const categories: { label: string; value: CategoryType; color: string }[] = [
     { label: 'Study 📚', value: 'study', color: 'border-blue-500/40 text-blue-400 bg-blue-500/10' },
@@ -33,8 +35,10 @@ export const TaskConfirmModal: React.FC<TaskConfirmModalProps> = ({
     { label: 'General 📌', value: 'general', color: 'border-slate-500/40 text-slate-400 bg-slate-500/10' },
   ];
 
-  const handleSave = () => {
-    if (!title.trim()) return;
+  const handleSave = async () => {
+    if (!title.trim() || isSaving) return;
+    setSaveError('');
+    setIsSaving(true);
 
     // Trigger celebration confetti
     try {
@@ -47,17 +51,23 @@ export const TaskConfirmModal: React.FC<TaskConfirmModalProps> = ({
       // Ignored if confetti fails
     }
 
-    onConfirm({
-      title: title.trim(),
-      description: extractedTask.description,
-      scheduled_date: scheduledDate || null,
-      scheduled_time: scheduledTime || null,
-      priority,
-      category,
-      reminder_required: reminder,
-      original_transcript: extractedTask.original_transcript,
-      language: extractedTask.language,
-    });
+    try {
+      await onConfirm({
+        title: title.trim(),
+        description: extractedTask.description,
+        scheduled_date: scheduledDate || null,
+        scheduled_time: scheduledTime || null,
+        priority,
+        category,
+        reminder_required: reminder,
+        original_transcript: extractedTask.original_transcript,
+        language: extractedTask.language,
+      });
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Could not save this task.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const setRelativeDate = (daysAhead: number) => {
@@ -275,12 +285,14 @@ export const TaskConfirmModal: React.FC<TaskConfirmModalProps> = ({
           </button>
           <button
             onClick={handleSave}
+            disabled={isSaving || !title.trim()}
             className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-xs shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-1.5 transition-all active:scale-95"
           >
             <Check className="w-4 h-4" />
-            <span>Create Task</span>
+            <span>{isSaving ? 'Saving...' : 'Create Task'}</span>
           </button>
         </div>
+        {saveError && <p className="form-error px-4 pb-3" role="alert">{saveError}</p>}
       </div>
     </div>
   );

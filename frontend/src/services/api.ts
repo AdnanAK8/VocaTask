@@ -8,6 +8,12 @@ const API_BASE = configuredApiUrl
     : null;
 
 const getApiUrl = (path: string): string | null => API_BASE ? `${API_BASE}${path}` : null;
+const isDevelopment = import.meta.env.DEV;
+
+const responseError = async (response: Response, action: string): Promise<Error> => {
+  const data = await response.json().catch(() => null);
+  return new Error(data?.detail || `${action} failed (HTTP ${response.status}).`);
+};
 
 const getAudioFilename = (mimeType: string): string => {
   const normalizedType = mimeType.toLowerCase();
@@ -37,6 +43,22 @@ const getCustomKeyHeaders = (): Record<string, string> => {
   }
   const openai = localStorage.getItem('openai_api_key')?.trim();
   if (openai && openai.startsWith('sk-') && openai.length > 20) headers['X-OpenAI-Key'] = openai;
+  const elevenlabs = localStorage.getItem('elevenlabs_api_key')?.trim();
+  if (elevenlabs && elevenlabs.length > 10) headers['X-ElevenLabs-Key'] = elevenlabs;
+
+  // Authentication credentials
+  const token = localStorage.getItem('vocatask_auth_token')?.trim();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  const userJson = localStorage.getItem('vocatask_auth_user');
+  if (userJson) {
+    try {
+      const u = JSON.parse(userJson);
+      if (u?.id) headers['X-User-Id'] = u.id;
+    } catch {}
+  }
+
   return headers;
 };
 
@@ -476,10 +498,9 @@ export function heuristicParseTask(transcript: string): ExtractedTask {
 
 export const api = {
   /**
-   * Sends direct text to AI task parser with server API try + client-side AI/heuristic fallback.
+  * Sends direct text to the backend task parser.
    */
   async processVoiceText(text: string): Promise<ExtractedTask> {
-    // 1. Try server backend if available
     const processTextUrl = getApiUrl('/voice/process-text');
     try {
       if (!processTextUrl) throw new Error('Backend URL is not configured');
@@ -496,10 +517,13 @@ export const api = {
       });
 
       const contentType = response.headers.get('content-type') || '';
-      if (response.ok && contentType.includes('application/json')) {
-        return await response.json();
-      }
+      if (!response.ok) throw await responseError(response, 'Task parsing');
+      if (!contentType.includes('application/json')) throw new Error('Backend returned an unexpected response.');
+      return await response.json();
     } catch (e) {
+      if (!isDevelopment) {
+        throw new Error(`Backend task parsing failed: ${e instanceof Error ? e.message : 'Unable to reach the API.'}`);
+      }
       console.warn('Backend API unreachable or offline, trying client-side parsing:', e);
     }
 
@@ -565,8 +589,7 @@ export const api = {
   },
 
   /**
-   * Uploads raw recorded audio blob for backend Whisper/Gemini transcription & task extraction
-   * with full client-side Groq/OpenAI/Gemini fallback when deployed statically (e.g. AWS S3/CloudFront)!
+  * Uploads raw recorded audio for backend transcription and task extraction.
    */
   async processVoiceAudio(audioBlob: Blob, language?: string): Promise<ExtractedTask> {
     // 1. Try backend server if reachable
@@ -600,7 +623,21 @@ export const api = {
       }
     } catch (e) {
       backendError = e instanceof Error ? e.message : 'The audio transcription backend could not be reached.';
-      console.warn('Backend API unreachable for audio transcription, trying client-side APIs:', e);
+      if (isDevelopment) {
+        console.warn('Backend API unreachable for audio transcription, trying client-side APIs:', e);
+      }
+    }
+
+    const setupHelp = backendResponded
+      ? ''
+      : API_BASE
+        ? 'Check that VITE_API_URL points to your HTTPS FastAPI backend and that backend CORS allows this frontend origin.'
+        : 'Set VITE_API_URL to your HTTPS FastAPI backend.';
+    if (!isDevelopment) {
+      throw new Error([
+        backendError || 'Audio transcription is unavailable.',
+        setupHelp,
+      ].filter(Boolean).join(' '));
     }
 
     // 2. Try client-side Gemini Multimodal Audio API if key is saved in localStorage
@@ -696,11 +733,37 @@ export const api = {
       }
     }
 
-    const setupHelp = backendResponded
-      ? ''
-      : API_BASE
-        ? 'Check that VITE_API_URL points to your HTTPS FastAPI backend and that backend CORS allows this frontend origin.'
-        : 'Set VITE_API_URL to your HTTPS FastAPI backend, or add a supported user API key in Settings.';
+    // 5. Try client-side ElevenLabs Scribe STT if key is saved in localStorage
+    // ponytail: simple direct fetch to ElevenLabs STT without bloat
+    const elevenlabsKey = localStorage.getItem('elevenlabs_api_key')?.trim();
+    if (elevenlabsKey && elevenlabsKey.length > 10) {
+      try {
+        const formData = new FormData();
+        formData.append('file', audioBlob, getAudioFilename(audioBlob.type));
+        formData.append('model_id', 'scribe_v1');
+        if (language && language !== 'auto' && language !== 'hinglish') {
+          formData.append('language_code', language.split('-')[0]);
+        }
+
+        const res = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
+          method: 'POST',
+          headers: { 'xi-api-key': elevenlabsKey },
+          body: formData,
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.text) {
+            return await this.processVoiceText(data.text);
+          }
+        } else {
+          console.warn('ElevenLabs API returned status:', res.status);
+        }
+      } catch (err) {
+        console.warn('Client-side ElevenLabs STT failed:', err);
+      }
+    }
+
     throw new Error([
       backendError || 'Audio transcription is unavailable.',
       setupHelp,
@@ -717,12 +780,13 @@ export const api = {
       if (!tasksUrl) throw new Error('Backend URL is not configured');
       const res = await fetch(tasksUrl);
       const contentType = res.headers.get('content-type') || '';
-      if (res.ok && contentType.includes('application/json')) {
-        const data: Task[] = await res.json();
-        localStorage.setItem('voicetasks_cache', JSON.stringify(data));
-        return data;
-      }
+      if (!res.ok) throw await responseError(res, 'Loading tasks');
+      if (!contentType.includes('application/json')) throw new Error('Backend returned an unexpected response while loading tasks.');
+      const data: Task[] = await res.json();
+      localStorage.setItem('voicetasks_cache', JSON.stringify(data));
+      return data;
     } catch (e) {
+      if (!isDevelopment) throw e;
       console.warn('Network offline or backend unreachable, loading from local cache:', e);
     }
 
@@ -744,14 +808,15 @@ export const api = {
       });
 
       const contentType = res.headers.get('content-type') || '';
-      if (res.ok && contentType.includes('application/json')) {
-        const created: Task = await res.json();
-        const cached = localStorage.getItem('voicetasks_cache');
-        const list: Task[] = cached ? JSON.parse(cached) : [];
-        localStorage.setItem('voicetasks_cache', JSON.stringify([created, ...list]));
-        return created;
-      }
+      if (!res.ok) throw await responseError(res, 'Saving task');
+      if (!contentType.includes('application/json')) throw new Error('Backend returned an unexpected response while saving the task.');
+      const created: Task = await res.json();
+      const cached = localStorage.getItem('voicetasks_cache');
+      const list: Task[] = cached ? JSON.parse(cached) : [];
+      localStorage.setItem('voicetasks_cache', JSON.stringify([created, ...list]));
+      return created;
     } catch (e) {
+      if (!isDevelopment) throw e;
       console.warn('Failed to save to backend, falling back to local storage:', e);
     }
 
@@ -769,26 +834,29 @@ export const api = {
 
   async updateTask(id: string, updates: TaskUpdateInput): Promise<Task> {
     try {
-      const response = await fetch(`${API_BASE}/tasks/${id}`, {
+      const url = getApiUrl(`/tasks/${id}`);
+      if (!url) throw new Error('Backend URL is not configured');
+      const response = await fetch(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       });
 
       const contentType = response.headers.get('content-type') || '';
-      if (response.ok && contentType.includes('application/json')) {
-        const updated: Task = await response.json();
-        const cached = localStorage.getItem('voicetasks_cache');
-        if (cached) {
-          const list: Task[] = JSON.parse(cached);
-          localStorage.setItem(
-            'voicetasks_cache',
-            JSON.stringify(list.map((task) => (task.id === id ? updated : task))),
-          );
-        }
-        return updated;
+      if (!response.ok) throw await responseError(response, 'Updating task');
+      if (!contentType.includes('application/json')) throw new Error('Backend returned an unexpected response while updating the task.');
+      const updated: Task = await response.json();
+      const cached = localStorage.getItem('voicetasks_cache');
+      if (cached) {
+        const list: Task[] = JSON.parse(cached);
+        localStorage.setItem(
+          'voicetasks_cache',
+          JSON.stringify(list.map((task) => (task.id === id ? updated : task))),
+        );
       }
+      return updated;
     } catch (e) {
+      if (!isDevelopment) throw e;
       console.warn('Could not update task on server, updating local cache:', e);
     }
 
@@ -811,14 +879,17 @@ export const api = {
    */
   async toggleTask(id: string): Promise<Task> {
     try {
-      const res = await fetch(`${API_BASE}/tasks/${id}/toggle`, {
+      const url = getApiUrl(`/tasks/${id}/toggle`);
+      if (!url) throw new Error('Backend URL is not configured');
+      const res = await fetch(url, {
         method: 'PATCH',
       });
       const contentType = res.headers.get('content-type') || '';
-      if (res.ok && contentType.includes('application/json')) {
-        return res.json();
-      }
+      if (!res.ok) throw await responseError(res, 'Updating task status');
+      if (!contentType.includes('application/json')) throw new Error('Backend returned an unexpected response while updating task status.');
+      return res.json();
     } catch (e) {
+      if (!isDevelopment) throw e;
       console.warn('Could not toggle on server, toggling locally:', e);
     }
 
@@ -840,8 +911,12 @@ export const api = {
    */
   async deleteTask(id: string): Promise<void> {
     try {
-      await fetch(`${API_BASE}/tasks/${id}`, { method: 'DELETE' });
+      const url = getApiUrl(`/tasks/${id}`);
+      if (!url) throw new Error('Backend URL is not configured');
+      const response = await fetch(url, { method: 'DELETE' });
+      if (!response.ok) throw await responseError(response, 'Deleting task');
     } catch (e) {
+      if (!isDevelopment) throw e;
       console.warn('Could not delete on server:', e);
     }
 
@@ -861,6 +936,7 @@ export const api = {
     has_gemini: boolean;
     has_openai: boolean;
     has_groq: boolean;
+    has_elevenlabs: boolean;
     message: string;
   }> {
     try {
@@ -880,6 +956,7 @@ export const api = {
       has_gemini: false,
       has_openai: false,
       has_groq: false,
+      has_elevenlabs: false,
       message: 'Fast built-in multilingual parser active',
     };
   },

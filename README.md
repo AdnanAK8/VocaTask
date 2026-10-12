@@ -21,9 +21,19 @@ Speak naturally in **any language** (English, Hindi, Punjabi, Hinglish, Spanish,
 * **✅ Pre-Save AI Confirmation Sheet:**
   * Clean review modal allowing users to edit the parsed title, pick dates, or adjust categories before saving.
   * Celebratory confetti animation upon task creation.
-* **⚡ Offline-Resilient & Fast:**
-  * SQLite persistent database on FastAPI backend.
-  * Automatic `localStorage` caching in the PWA so tasks are always accessible even when offline.
+* **⚡ Fast, with Local Development Caching:**
+  * SQLite storage for local development, with successful task responses cached in browser storage.
+  * Production task reads and writes require a reachable backend; browser cache is not a substitute for durable backend storage.
+
+* **🔐 Multi-Method Authentication Gate:**
+  * **Interactive Gate Before Entry:** Users are greeted and required to provide their name and authenticate before accessing the live task manager.
+  * **Email & Password:** Registration and login with PBKDF2-HMAC-SHA256 password security and JWT tokens.
+  * **Mobile Phone Number:** International phone support with 6-digit SMS OTP verification (with developer test OTP mode).
+  * **Google Sign-In:** One-click Google OAuth 2.0 and Google Identity Services API verification.
+  * **Facebook Login:** OAuth integration verified with Facebook Graph API.
+  * **Live Redirection:** Authenticated users are smoothly transitioned into their personalized dashboard with user-isolated tasks.
+
+> **Authentication & Multi-Tenant Support:** The backend API verifies tokens via signed HMAC-SHA256 JWTs (`Authorization: Bearer <token>`) and isolates tasks by authenticated user (`user_id`). Provider credentials for Google and Facebook can be set via `.env` or passed via frontend.
 
 ---
 
@@ -54,8 +64,9 @@ flowchart TD
 
 ## 🚀 Quick Start (Running Locally)
 
-### 1. Prerequisites
-* **Node.js** (v18+)
+### Prerequisites
+
+* **Node.js** (`^20.19.0` or `>=22.12.0`, required by Vite 8)
 * **Python** (3.11+)
 
 ---
@@ -77,21 +88,67 @@ source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
+```
 
-# Configure environment variables (for you and your team):
+#### 🔐 Environment Variables & Team Collaboration (GitHub)
+
+Every team member works with their own local environment file:
+
+```bash
+# Copy the example template into backend/.env
 # Windows:
 copy .env.example .env
 # Mac / Linux:
 cp .env.example .env
+```
 
-# (Optional) Open backend/.env and paste your API keys:
-# GEMINI_API_KEY=your_gemini_api_key_here
-# GROQ_API_KEY=your_groq_api_key_here
-# OPENAI_API_KEY=your_openai_api_key_here
+Open `backend/.env` and add any provider keys you want to use:
 
+```env
+# Google Gemini (Recommended - free tier via Google AI Studio)
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# ElevenLabs (for Speech-to-Text Scribe STT - use the secret key starting with sk_)
+ELEVEN_LAB_API_KEY=sk_your_elevenlabs_secret_key_here
+
+# Groq (Alternative for ultra-fast Llama-3.3 / Whisper)
+GROQ_API_KEY=your_groq_api_key_here
+
+# OpenAI (Alternative for GPT-4o-mini / Whisper)
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+**Security note:** `backend/.env` is ignored by Git and must never be committed. Use your own provider keys or share them only through an approved secret manager, never through GitHub, chat, or a committed file.
+
+`backend/.env.example` is a template only. Put real provider credentials in `backend/.env` locally or in the backend host's secret/environment-variable settings. Never put provider keys in `VITE_*` variables or frontend source. Keys entered in app Settings are stored in that browser's local storage and are visible to that browser's owner.
+
+The backend looks for environment configuration in this order:
+
+1. Custom path in `VOICETASKS_ENV_FILE`, if set
+2. `backend/.env`
+3. Repository-root `.env`
+4. `~/.voicetasks.env` (for example, `C:\Users\<username>\.voicetasks.env`)
+5. Operating system or container environment variables
+
+#### API configuration and limits
+
+The backend uses these defaults; override them in the backend environment when needed:
+
+| Variable | Default | Purpose |
+| -------- | ------: | ------- |
+| `CORS_ORIGINS` | Local development origins | Exact JSON array of allowed browser origins |
+| `API_RATE_LIMIT_PER_MINUTE` | `120` | General API requests per IP per minute |
+| `VOICE_RATE_LIMIT_PER_MINUTE` | `20` | Voice API requests per IP per minute |
+| `AUDIO_RATE_LIMIT_PER_MINUTE` | `5` | Audio transcription requests per IP per minute |
+| `MAX_AUDIO_UPLOAD_BYTES` | `15728640` | Maximum uploaded audio size (15 MiB) |
+
+The in-process limits are per backend instance and are not authentication. Add gateway/WAF throttling for a shared deployment-wide limit. The application currently has no user authentication or per-user task ownership.
+
+```bash
 # Start the FastAPI server
 python run.py
 ```
+
 * Backend will be running at: `http://127.0.0.1:8000`
 * Interactive API Docs (Swagger): `http://127.0.0.1:8000/docs`
 
@@ -105,19 +162,24 @@ python run.py
 # In a new terminal, navigate to frontend
 cd frontend
 
-# Install packages
-npm install
+# Install locked dependencies
+npm ci
 
-# Start Vite development server
+# Option A: Start Vite for Laptop/Desktop browser
 npm run dev
+# (Accessible at http://localhost:5173)
+
+# Option B: Start Vite with HTTPS for Mobile (Android / iOS / Phone) Testing
+npm run dev:https
+# (Accessible at https://<your-lan-ip>:5173 - enables microphone permissions on Android and iOS!)
 ```
-* Frontend will be running at: `http://localhost:5173`
 
 ---
 
 ### 🧪 Running Tests
 
-#### Backend Test Suite (25 Tests across API, CRUD, and AI Heuristics)
+#### Backend Test Suite
+
 ```bash
 cd backend
 # Windows:
@@ -127,22 +189,26 @@ python -m unittest discover -s tests -v
 ```
 
 #### Frontend Linter & Build Verification
+
 ```bash
 cd frontend
-npm run lint
-npm run build
+npm ci
+npm test
 ```
 
 ---
 
 ## 📲 How to Install as an App on Mobile
 
-### On Android:
+### On Android
+
 1. Open Chrome and go to your app URL (or local network IP e.g. `http://192.168.x.x:5173`).
+
 2. An **"Install VoiceTasks App"** banner will automatically appear at the bottom.
 3. Tap **Install** $\rightarrow$ VoiceTasks AI will appear directly on your home screen and app drawer just like a native app.
 
-### On iOS (iPhone / iPad):
+### On iOS (iPhone / iPad)
+
 1. Open Safari and navigate to your app URL.
 2. Tap the **Share icon** (`⬆`) at the bottom navigation bar.
 3. Scroll down and tap **"Add to Home Screen"** (`➕`).
@@ -150,55 +216,54 @@ npm run build
 
 ---
 
-## ☁️ Production Deployment Guide
+## ☁️ Production Setup
 
-### Deploying the Backend (Render or Railway)
-1. Push your repository to **GitHub**.
-2. Go to [render.com](https://render.com) and create a **New Web Service**.
-3. Connect your GitHub repository and set:
-   * **Root Directory:** `backend`
-   * **Build Command:** `pip install -r requirements.txt`
-   * **Start Command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-4. In **Environment Variables**, add:
-  * At least one of `GROQ_API_KEY`, `OPENAI_API_KEY`, or `GEMINI_API_KEY` for server-side audio transcription.
-  * `DEFAULT_TIMEZONE` = `Asia/Kolkata`
-  * `CORS_ORIGINS` = `["https://your-frontend-domain.cloudfront.net"]` (JSON array; include your local origins too if needed)
-5. Your backend host will provide a live HTTPS URL (e.g., `https://api.yourdomain.com`).
+### AWS Amplify + App Runner
 
-### Deploying the Frontend (AWS S3 + CloudFront or AWS Amplify)
-The frontend is a Vite + React SPA that compiles to static files in `frontend/dist`.
+1. Deploy the FastAPI service from the `backend` directory using `backend/apprunner.yaml`, or configure App Runner with build command `pip install -r requirements.txt`, start command `uvicorn app.main:app --host 0.0.0.0 --port 8000`, and port `8000`.
+1. In the App Runner environment, add only the provider keys you intend to use (`GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENAI_API_KEY`, and/or `ELEVEN_LAB_API_KEY`). Set `DEFAULT_TIMEZONE=Asia/Kolkata`. Set `CORS_ORIGINS` to a JSON array containing the exact frontend origin, such as `["https://main.example.amplifyapp.com"]`; do not use `*` in production.
+1. The backend defaults to `API_RATE_LIMIT_PER_MINUTE=120`, `VOICE_RATE_LIMIT_PER_MINUTE=20`, and `AUDIO_RATE_LIMIT_PER_MINUTE=5`. Configure API Gateway/WAF throttling too if traffic passes through those services; in-process limits are per instance.
+1. In AWS Amplify, connect the repository and use the root `amplify.yml`. Set `VITE_API_URL` to the backend HTTPS base URL with no trailing slash. For example, use `https://api.example.com`, not a URL ending in `/api`; the frontend adds `/api` automatically. For API Gateway, include a named stage in the base URL, such as `https://<api-id>.execute-api.<region>.amazonaws.com/<stage>`.
+1. Redeploy the frontend after setting `VITE_API_URL`. Set backend `CORS_ORIGINS` to the exact Amplify or CloudFront origin, including `https://` and excluding any path.
+1. Verify `GET <backend-url>/health`, `GET <backend-url>/api/voice/status`, and voice/task requests in the browser Network tab. A `404` usually means an API route or gateway stage is missing/not deployed; a CORS error means the origin or gateway CORS configuration does not match.
 
-1. **Build the frontend**:
-   * Set `VITE_API_URL` to your backend HTTPS URL (e.g. `https://api.yourdomain.com` without trailing slash).
-   * Run `npm run build` in the `frontend` folder to generate the production build in `frontend/dist`.
-2. **Deploy to AWS**:
-   * **Option A (AWS S3 + CloudFront)**:
-     - Upload `frontend/dist/*` to an S3 bucket configured for static hosting or private bucket with CloudFront Origin Access Control (OAC).
-     - Configure CloudFront distribution pointing to the S3 bucket.
-     - Add a custom error response in CloudFront: HTTP Error Code `404` (and `403`), Response Page Path `/index.html`, HTTP Response Code `200` (for React SPA routing).
-   * **Option B (AWS Amplify)**:
-     - Connect your Git repository, set base directory to `frontend`, build command to `npm run build`, and output directory to `dist`.
-     - In Amplify build settings / environment variables, configure `VITE_API_URL`.
-     - Ensure Single Page App (SPA) redirect rule `</^[^.]+$|\.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|woff2|ttf|map|json)$)([^.]+$)/>` rewrites to `/index.html` with status `200`.
-3. Add your deployed AWS frontend domain to the backend's `CORS_ORIGINS` JSON array.
-4. HTTPS is required by browsers for microphone permissions. Server API keys belong only in the backend host's environment variables; user-supplied keys saved in app Settings remain browser-side and are sent only as request headers.
+If deploying the backend behind API Gateway and Lambda, configure a Lambda proxy integration for the root and `/{proxy+}` routes, deploy the stage, and allow the required methods and headers at the gateway. The screenshot's `execute-api` URL indicates this API Gateway path rather than an App Runner hostname. See [AWS_DEPLOYMENT.md](AWS_DEPLOYMENT.md) for detailed AWS steps.
+
+### Docker Compose
+
+From the repository root, optionally create a root `.env` file for backend provider keys (do not commit it), then run:
+
+```bash
+docker compose up --build
+```
+
+Open `http://localhost`. The frontend container uses the same-origin `/api` path and Nginx proxies it to the backend container. The API is also available directly at `http://localhost:8000`. The compose configuration stores SQLite data in a Docker volume; production AWS deployments need a durable database/storage configuration because container-local SQLite files may not survive replacement or scale-out.
+
+### Production Security Checklist
+
+* Keep provider credentials in the backend host's secret store/environment variables; never put them in frontend build variables or source.
+* Configure exact CORS origins and gateway-level rate limits. CORS does not prevent direct API clients from calling a public endpoint.
+* Add authentication (for example, Cognito/JWT validation) and enforce per-user ownership on every task operation before using real personal data.
+* Use durable shared storage for production tasks; local SQLite is suitable for development/single-instance use, not horizontally scaled deployments.
+* HTTPS is required for browser microphone access.
 
 ---
 
 ## 📂 Project Structure
 
-```
+```text
 react js learning/
 ├── backend/
 │   ├── app/
 │   │   ├── api/             # Voice & Tasks endpoints
-│   │   ├── core/            # Config & environment settings
+│   │   ├── core/            # Config, middleware, and environment settings
 │   │   ├── schemas/         # Pydantic validation models
 │   │   ├── services/        # STT, AI LLM Parser, Task Store
 │   │   └── main.py          # FastAPI app entrypoint
 │   ├── run.py               # Local server runner
 │   ├── requirements.txt     # Python dependencies
-│   └── .env                 # Environment variables
+│   ├── .env.example         # Environment variables template (Committed)
+│   └── .env                 # Local secrets file (Gitignored)
 ├── frontend/
 │   ├── public/
 │   │   ├── favicon.svg      # App icon
