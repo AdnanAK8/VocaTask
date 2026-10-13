@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import confetti from 'canvas-confetti';
 import {
   Sparkles,
   Mail,
-  Phone,
   Lock,
   User as UserIcon,
   ArrowRight,
@@ -22,16 +21,6 @@ interface AuthGateProps {
   onAuthenticated: (user: User) => void;
 }
 
-const COUNTRY_CODES = [
-  { code: '+91', country: 'IN', label: 'India (+91)' },
-  { code: '+1', country: 'US', label: 'USA / Canada (+1)' },
-  { code: '+44', country: 'GB', label: 'UK (+44)' },
-  { code: '+971', country: 'AE', label: 'UAE (+971)' },
-  { code: '+61', country: 'AU', label: 'Australia (+61)' },
-  { code: '+49', country: 'DE', label: 'Germany (+49)' },
-  { code: '+65', country: 'SG', label: 'Singapore (+65)' },
-];
-
 export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated }) => {
   const [activeTab, setActiveTab] = useState<AuthProvider>('email');
   const [name, setName] = useState('');
@@ -42,14 +31,6 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated }) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  // Phone form state
-  const [countryCode, setCountryCode] = useState('+91');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [otpCode, setOtpCode] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpTimer, setOtpTimer] = useState(0);
-  const [testOtpHint, setTestOtpHint] = useState<string | null>(null);
-
   // Social simulation/OAuth dialogs
   const [socialModal, setSocialModal] = useState<'google' | 'facebook' | null>(null);
   const [socialEmail, setSocialEmail] = useState('');
@@ -58,17 +39,6 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-
-  // Countdown timer for OTP
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
-    if (otpTimer > 0) {
-      interval = setInterval(() => {
-        setOtpTimer((prev) => prev - 1);
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [otpTimer]);
 
   const triggerCelebration = () => {
     try {
@@ -126,58 +96,6 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated }) => {
     }
   };
 
-  // 2. Phone Send OTP
-  const handleSendOtp = async () => {
-    setError(null);
-    if (!phoneNumber.trim() || phoneNumber.trim().length < 6) {
-      setError('Please enter a valid mobile number.');
-      return;
-    }
-
-    const fullPhone = `${countryCode}${phoneNumber.trim().replace(/\D/g, '')}`;
-    setLoading(true);
-    try {
-      const res = await authService.sendPhoneOtp(fullPhone, name.trim());
-      setOtpSent(true);
-      setOtpTimer(60);
-      if (res.test_otp) {
-        setTestOtpHint(res.test_otp);
-      }
-      setSuccessMessage(`Verification code sent to ${fullPhone}!`);
-      setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not send verification code.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 2b. Phone Verify OTP
-  const handleVerifyPhone = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    if (!name.trim()) {
-      setError('Please enter your full name to proceed.');
-      return;
-    }
-    if (!otpCode.trim() || otpCode.trim().length < 4) {
-      setError('Please enter the verification code sent to your phone.');
-      return;
-    }
-
-    const fullPhone = `${countryCode}${phoneNumber.trim().replace(/\D/g, '')}`;
-    setLoading(true);
-    try {
-      const user = await authService.verifyPhoneOtp(fullPhone, otpCode.trim(), name.trim());
-      handleSuccess(user, `Phone verified! Welcome, ${user.name}!`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invalid verification code.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // 3. Google Sign-In
   const handleGoogleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -215,30 +133,6 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated }) => {
       handleSuccess(user, `Signed in with Facebook as ${user.name}!`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Facebook authentication failed.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Quick 1-click test user
-  const handleQuickDemo = async () => {
-    setName('Sarabjit Singh');
-    setLoading(true);
-    try {
-      const testEmail = `sarab.demo.${Date.now().toString().slice(-4)}@example.com`;
-      const user = await authService.registerEmail('Sarabjit Singh', testEmail, 'password123');
-      handleSuccess(user, 'Instant Demo signed in! Welcome Sarabjit!');
-    } catch {
-      const fallback: User = {
-        id: `demo_${Date.now()}`,
-        name: 'Sarabjit Singh',
-        email: 'sarab.demo@example.com',
-        provider: 'email',
-        avatar_url: 'https://api.dicebear.com/7.x/initials/svg?seed=Sarabjit+Singh',
-        created_at: new Date().toISOString(),
-      };
-      authService.setSession(fallback, `token_${Date.now()}`);
-      handleSuccess(fallback, 'Demo mode active! Welcome Sarabjit!');
     } finally {
       setLoading(false);
     }
@@ -313,7 +207,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated }) => {
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
             Select Authentication Method
           </label>
-          <div className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-slate-950/80 border border-slate-800">
+          <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-slate-950/80 border border-slate-800">
             <button
               type="button"
               onClick={() => { setActiveTab('email'); setError(null); }}
@@ -325,19 +219,6 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated }) => {
             >
               <Mail className="w-4 h-4 mb-1" />
               <span>Email</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => { setActiveTab('phone'); setError(null); }}
-              className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl text-xs font-semibold transition-all ${
-                activeTab === 'phone'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Phone className="w-4 h-4 mb-1" />
-              <span>Mobile</span>
             </button>
 
             <button
@@ -378,10 +259,7 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated }) => {
         {/* Tab 1: Email Authentication */}
         {activeTab === 'email' && (
           <form onSubmit={handleEmailAuth} className="space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-              <span className="text-xs text-slate-400">
-                {emailMode === 'register' ? 'New here? Create account' : 'Already registered? Sign in'}
-              </span>
+            <div className="flex justify-center border-b border-slate-800 pb-2">
               <button
                 type="button"
                 onClick={() => {
@@ -390,7 +268,9 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated }) => {
                 }}
                 className="text-xs font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
               >
-                {emailMode === 'register' ? 'Switch to Sign In' : 'Switch to Register'}
+                {emailMode === 'register'
+                  ? 'Already have an account? Sign in'
+                  : 'New here? Create an account'}
               </button>
             </div>
 
@@ -447,138 +327,11 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated }) => {
                 </>
               ) : (
                 <>
-                  <span>{emailMode === 'register' ? 'Register & Enter Live App' : 'Sign In & Enter Live App'}</span>
+                  <span>{emailMode === 'register' ? 'Create Account & Continue' : 'Sign In & Continue'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
             </button>
-          </form>
-        )}
-
-        {/* Tab 2: Phone Number OTP Authentication */}
-        {activeTab === 'phone' && (
-          <form onSubmit={handleVerifyPhone} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">Mobile Number</label>
-              <div className="flex gap-2">
-                <select
-                  value={countryCode}
-                  onChange={(e) => setCountryCode(e.target.value)}
-                  className="py-2 px-2.5 rounded-xl bg-slate-950/70 border border-slate-700 text-white text-xs focus:outline-none focus:border-indigo-500 shrink-0"
-                >
-                  {COUNTRY_CODES.map((item) => (
-                    <option key={item.code} value={item.code}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-                <div className="relative flex-1">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                    <Phone className="w-4 h-4" />
-                  </div>
-                  <input
-                    type="tel"
-                    required
-                    value={phoneNumber}
-                    onChange={(e) => setPhoneNumber(e.target.value)}
-                    placeholder="98765 43210"
-                    disabled={otpSent}
-                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950/70 border border-slate-700 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-indigo-500 disabled:opacity-60"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {!otpSent ? (
-              <button
-                type="button"
-                onClick={handleSendOtp}
-                disabled={loading || !phoneNumber.trim()}
-                className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-xs font-bold flex items-center justify-center gap-2 hover:from-indigo-500 hover:to-purple-500 active:scale-[0.99] shadow-lg shadow-indigo-600/30 disabled:opacity-50 transition-all"
-              >
-                {loading ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Sending code...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Send Verification Code (SMS)</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
-            ) : (
-              <div className="space-y-3 animate-in fade-in">
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-medium text-slate-300">Enter 6-Digit OTP</label>
-                    <button
-                      type="button"
-                      onClick={() => setOtpSent(false)}
-                      className="text-[11px] text-indigo-400 hover:text-indigo-300"
-                    >
-                      Change Number
-                    </button>
-                  </div>
-                  <input
-                    type="text"
-                    maxLength={6}
-                    value={otpCode}
-                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                    placeholder="123456"
-                    autoFocus
-                    className="w-full tracking-widest text-center font-mono font-bold text-lg py-2.5 rounded-xl bg-slate-950/70 border border-slate-700 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-
-                {testOtpHint && (
-                  <div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-[11px] text-indigo-300 flex items-center justify-between">
-                    <span>💡 Test OTP: <strong>{testOtpHint}</strong></span>
-                    <button
-                      type="button"
-                      onClick={() => setOtpCode(testOtpHint)}
-                      className="text-indigo-400 font-semibold hover:underline"
-                    >
-                      Auto-fill
-                    </button>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between text-xs text-slate-400">
-                  <span>
-                    {otpTimer > 0 ? `Resend in ${otpTimer}s` : 'Did not receive code?'}
-                  </span>
-                  {otpTimer === 0 && (
-                    <button
-                      type="button"
-                      onClick={handleSendOtp}
-                      className="text-indigo-400 hover:text-indigo-300 font-medium"
-                    >
-                      Resend Code
-                    </button>
-                  )}
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading || otpCode.length < 4}
-                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-xs font-bold flex items-center justify-center gap-2 hover:from-emerald-500 hover:to-teal-500 active:scale-[0.99] shadow-lg shadow-emerald-600/30 disabled:opacity-50 transition-all"
-                >
-                  {loading ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Verifying code...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Verify & Enter Live App</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
           </form>
         )}
 
@@ -657,22 +410,6 @@ export const AuthGate: React.FC<AuthGateProps> = ({ onAuthenticated }) => {
             </button>
           </div>
         )}
-
-        {/* Quick Demo Mode for Zero Friction Evaluation */}
-        <div className="mt-6 pt-5 border-t border-slate-800 text-center">
-          <p className="text-[11px] text-slate-500 mb-2">
-            Want to test immediately without typing passwords?
-          </p>
-          <button
-            type="button"
-            onClick={handleQuickDemo}
-            disabled={loading}
-            className="w-full py-2.5 px-3 rounded-xl border border-slate-700/80 bg-slate-800/50 hover:bg-slate-800 text-indigo-300 hover:text-white text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.99]"
-          >
-            <Zap className="w-3.5 h-3.5 text-amber-400" />
-            <span>1-Click Test Login as Sarabjit</span>
-          </button>
-        </div>
 
       </div>
 
