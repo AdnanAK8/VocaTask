@@ -299,17 +299,19 @@ export const App = () => {
   return (
     <div className="app-shell">
       <header className="header">
-        <a className="brand" href="#tasks" aria-label="VocaTask home">
-          <span className="brand-mark">V</span>
+        <div className="brand">
+          <a href="#tasks" className="brand-logo-link" aria-label="VocaTask home" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
+            <span className="brand-mark">V</span>
+            <span className="brand-name" style={{ color: 'var(--text)', fontWeight: 720 }}>VocaTask</span>
+          </a>
           <span className="brand-text">
-            <span className="brand-name">VocaTask</span>
-            <a href='https://aivantaai.com/'>
+            <a href="https://aivantaai.com/" target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}>
               <span className="brand-powered">
-              Powered by <img src={aivantaLogo} alt="AiVanta" />
+                Powered by <img src={aivantaLogo} alt="AiVanta" />
               </span>
             </a>
           </span>
-        </a>
+        </div>
         <div className="header-actions">
           <button
             className="icon-button header-notifications"
