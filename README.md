@@ -1,4 +1,4 @@
-# 🎙️ VoiceTasks AI
+# 🎙️ VocaTask
 
 > **A voice-first, multilingual AI task manager built as an installable Progressive Web App (PWA) with a Python FastAPI backend.**
 
@@ -25,24 +25,21 @@ Speak naturally in **any language** (English, Hindi, Punjabi, Hinglish, Spanish,
   * SQLite storage for local development, with successful task responses cached in browser storage.
   * Production task reads and writes require a reachable backend; browser cache is not a substitute for durable backend storage.
 
-* **🔐 Multi-Method Authentication Gate:**
-  * **Interactive Gate Before Entry:** Users are greeted and required to provide their name and authenticate before accessing the live task manager.
-  * **Email & Password:** Registration and login with PBKDF2-HMAC-SHA256 password security and JWT tokens.
-  * **Mobile Phone Number:** International phone support with 6-digit SMS OTP verification (with developer test OTP mode).
-  * **Google Sign-In:** One-click Google OAuth 2.0 and Google Identity Services API verification.
-  * **Facebook Login:** OAuth integration verified with Facebook Graph API.
-  * **Live Redirection:** Authenticated users are smoothly transitioned into their personalized dashboard with user-isolated tasks.
+* **🔐 Authentication UI:**
+  * Email registration and sign-in use PBKDF2-HMAC-SHA256 password hashing and signed HMAC-SHA256 JWTs.
+  * Google and Facebook buttons are present, but the current frontend submits placeholder credentials. Integrate real provider SDKs and token verification before production use.
+  * Phone OTP endpoints exist in the backend, but SMS delivery is simulated and the current auth screen does not offer phone sign-in.
+* **⚙️ Settings:** The dialog shows backend AI/provider status, read-only masked API-key prefixes, notification controls, and account details. Configure provider secrets in the backend environment, not in the frontend.
 
-> **Authentication & Multi-Tenant Support:** The backend API verifies tokens via signed HMAC-SHA256 JWTs (`Authorization: Bearer <token>`) and isolates tasks by authenticated user (`user_id`). Provider credentials for Google and Facebook can be set via `.env` or passed via frontend.
+> **Security status:** Task endpoints do not currently require a valid JWT, and the optional `X-User-Id` header is caller-controlled. Do not treat task access as authenticated or user-isolated, or expose personal task data in production, until backend authorization and ownership checks are enforced.
 
 ---
-
 ## 🏗️ Architecture
 
 ```mermaid
 flowchart TD
     subgraph Client ["Client Device (iOS / Android / Desktop)"]
-        UI["VoiceTasks PWA UI (React + Tailwind)"]
+        UI["VocaTask PWA UI (React + Tailwind)"]
         MIC["Browser Native Web Speech API"]
         MODAL["AI Confirmation Sheet"]
     end
@@ -57,7 +54,7 @@ flowchart TD
     API --> LLM
     LLM -->|Structured Task JSON| MODAL
     MODAL -->|Confirm & Save| DB
-    DB --> UI
+* **🔐 Authentication UI:**
 ```
 
 ---
@@ -67,7 +64,6 @@ flowchart TD
 ### Prerequisites
 
 * **Node.js** (`^20.19.0` or `>=22.12.0`, required by Vite 8)
-* **Python** (3.11+)
 
 ---
 
@@ -92,7 +88,6 @@ pip install -r requirements.txt
 
 #### 🔐 Environment Variables & Team Collaboration (GitHub)
 
-Every team member works with their own local environment file:
 
 ```bash
 # Copy the example template into backend/.env
@@ -101,7 +96,6 @@ copy .env.example .env
 # Mac / Linux:
 cp .env.example .env
 ```
-
 Open `backend/.env` and add any provider keys you want to use:
 
 ```env
@@ -120,7 +114,7 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 **Security note:** `backend/.env` is ignored by Git and must never be committed. Use your own provider keys or share them only through an approved secret manager, never through GitHub, chat, or a committed file.
 
-`backend/.env.example` is a template only. Put real provider credentials in `backend/.env` locally or in the backend host's secret/environment-variable settings. Never put provider keys in `VITE_*` variables or frontend source. Keys entered in app Settings are stored in that browser's local storage and are visible to that browser's owner.
+`backend/.env.example` is a template only. Put real provider credentials in `backend/.env` locally or in the backend host's secret/environment-variable settings. Never put provider keys in `VITE_*` variables or frontend source. The Settings dialog only shows provider configuration status and masked prefixes; it does not expose full backend secrets.
 
 The backend looks for environment configuration in this order:
 
@@ -142,7 +136,7 @@ The backend uses these defaults; override them in the backend environment when n
 | `AUDIO_RATE_LIMIT_PER_MINUTE` | `5` | Audio transcription requests per IP per minute |
 | `MAX_AUDIO_UPLOAD_BYTES` | `15728640` | Maximum uploaded audio size (15 MiB) |
 
-The in-process limits are per backend instance and are not authentication. Add gateway/WAF throttling for a shared deployment-wide limit. The application currently has no user authentication or per-user task ownership.
+The in-process limits are per backend instance and are not authentication. Add gateway/WAF throttling for a shared deployment-wide limit. Although email authentication endpoints and JWTs exist, task endpoints do not require authentication and must not be considered protected or user-isolated yet.
 
 ```bash
 # Start the FastAPI server
@@ -186,7 +180,6 @@ cd backend
 .\venv\Scripts\python.exe -m unittest discover -s tests -v
 # Mac/Linux:
 python -m unittest discover -s tests -v
-```
 
 #### Frontend Linter & Build Verification
 
@@ -196,6 +189,8 @@ npm ci
 npm test
 ```
 
+Some voice/API tests call the configured external AI provider. When provider keys are set, these tests need network access and can take longer than the frontend checks.
+
 ---
 
 ## 📲 How to Install as an App on Mobile
@@ -204,15 +199,14 @@ npm test
 
 1. Open Chrome and go to your app URL (or local network IP e.g. `http://192.168.x.x:5173`).
 
-2. An **"Install VoiceTasks App"** banner will automatically appear at the bottom.
-3. Tap **Install** $\rightarrow$ VoiceTasks AI will appear directly on your home screen and app drawer just like a native app.
-
+2. An **"Install VocaTask App"** banner will automatically appear at the bottom.
+3. Tap **Install** $\rightarrow$ VocaTask will appear directly on your home screen and app drawer just like a native app.
 ### On iOS (iPhone / iPad)
 
 1. Open Safari and navigate to your app URL.
 2. Tap the **Share icon** (`⬆`) at the bottom navigation bar.
 3. Scroll down and tap **"Add to Home Screen"** (`➕`).
-4. Tap **Add** $\rightarrow$ VoiceTasks AI will open in fullscreen mode without Safari URL bars.
+4. Tap **Add** $\rightarrow$ VocaTask will open in fullscreen mode without Safari URL bars.
 
 ---
 
@@ -228,7 +222,6 @@ npm test
 1. Verify `GET <backend-url>/health`, `GET <backend-url>/api/voice/status`, and voice/task requests in the browser Network tab. A `404` usually means an API route or gateway stage is missing/not deployed; a CORS error means the origin or gateway CORS configuration does not match.
 
 If deploying the backend behind API Gateway and Lambda, configure a Lambda proxy integration for the root and `/{proxy+}` routes, deploy the stage, and allow the required methods and headers at the gateway. The screenshot's `execute-api` URL indicates this API Gateway path rather than an App Runner hostname. See [AWS_DEPLOYMENT.md](AWS_DEPLOYMENT.md) for detailed AWS steps.
-
 ### Docker Compose
 
 From the repository root, optionally create a root `.env` file for backend provider keys (do not commit it), then run:
@@ -243,10 +236,10 @@ Open `http://localhost`. The frontend container uses the same-origin `/api` path
 
 * Keep provider credentials in the backend host's secret store/environment variables; never put them in frontend build variables or source.
 * Configure exact CORS origins and gateway-level rate limits. CORS does not prevent direct API clients from calling a public endpoint.
-* Add authentication (for example, Cognito/JWT validation) and enforce per-user ownership on every task operation before using real personal data.
+* Before using real personal data, require verified authentication on every task operation and enforce ownership using the authenticated identity. Do not trust a caller-supplied `X-User-Id` header.
+* Replace the placeholder Google/Facebook flows with real provider SDK tokens and verification. Replace the simulated phone OTP flow with a real SMS provider before production use.
 * Use durable shared storage for production tasks; local SQLite is suitable for development/single-instance use, not horizontally scaled deployments.
 * HTTPS is required for browser microphone access.
-
 ---
 
 ## 📂 Project Structure
@@ -275,6 +268,7 @@ react js learning/
 │   │   ├── App.tsx          # Root UI layout
 │   │   └── index.css        # Tailwind styling & animations
 │   ├── vite.config.ts       # Vite configuration with PWA plugin
-│   └── tailwind.config.js   # Tailwind theme
+* Before using real personal data, require verified authentication on every task operation and enforce ownership using the authenticated identity. Do not trust a caller-supplied `X-User-Id` header.
+* Replace the placeholder Google/Facebook flows with real provider SDK tokens and verification. Replace the simulated phone OTP flow with a real SMS provider before production use.
 └── README.md
 ```
