@@ -11,7 +11,7 @@ import { useTaskReminders } from './hooks/useTaskReminders';
 import { api } from './services/api';
 import aivantaLogo from './assets/Aivanta-Logo.png';
 import type { Task, ExtractedTask, TaskCreateInput, TaskUpdateInput, PriorityType, CategoryType } from './types/task';
-import { AuthGate } from './components/AuthGate';
+import { AuthGateDesign as AuthGate } from './components/AuthGateDesign';
 import { UserProfileMenu } from './components/UserProfileMenu';
 import { authService } from './services/authService';
 import type { User } from './types/auth';

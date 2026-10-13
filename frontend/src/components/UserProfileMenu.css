@@ -1,0 +1,31 @@
+.profile-menu{position:relative;flex:0 0 auto}
+.profile-trigger{min-height:42px;display:flex;align-items:center;gap:9px;padding:4px 10px 4px 5px;border:1px solid #dfe6e1;border-radius:999px;background:#fffefa;color:#30483e;text-align:left;transition:border-color 150ms ease,background-color 150ms ease,box-shadow 150ms ease}
+.profile-trigger:hover,.profile-trigger[aria-expanded="true"]{border-color:#c4d4ca;background:#fff;box-shadow:0 2px 8px rgba(43,65,52,.07)}
+.profile-trigger:focus-visible,.profile-logout:focus-visible{outline:3px solid rgba(75,107,91,.22);outline-offset:2px}
+.profile-avatar{width:32px;height:32px;flex:0 0 32px;display:grid;place-items:center;overflow:hidden;border-radius:50%;background:#e6efe9;color:#3b6452;font-size:11px;font-weight:800}
+.profile-avatar-image{width:100%;height:100%;object-fit:cover}
+.profile-name{max-width:132px;overflow:hidden;color:#34483e;font-size:12px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
+.profile-chevron{width:15px;height:15px;color:#77847c;transition:transform 160ms ease}
+.profile-chevron--open{transform:rotate(180deg)}
+.profile-dropdown{position:absolute;z-index:50;top:calc(100% + 9px);right:0;width:min(280px,calc(100vw - 24px));overflow:hidden;border:1px solid #e0e7e2;border-radius:13px;background:#fffefa;box-shadow:0 14px 36px rgba(37,53,44,.14);animation:profile-menu-enter 140ms ease-out both}
+.profile-dropdown-heading{padding:15px 16px 13px;border-bottom:1px solid #edf0ec}
+.profile-dropdown-name-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px}
+.profile-dropdown-name{min-width:0;overflow:hidden;color:#2d473b;font-size:13px;font-weight:750;text-overflow:ellipsis;white-space:nowrap}
+.profile-provider-badge{display:inline-flex;flex:0 0 auto;align-items:center;gap:5px;padding:3px 7px;border:1px solid #e1e8e3;border-radius:999px;background:#f5f8f5;color:#607268;font-size:10px;font-weight:650}
+.profile-provider-badge svg{width:12px;height:12px}
+.profile-provider-badge--google{background:#f4f7f5;color:#526d5e}
+.profile-provider-badge--facebook{background:#f2f6fb;color:#53708e}
+.profile-provider-badge--phone{background:#f1f7f3;color:#4f755f}
+.profile-provider-badge--email{background:#f5f6f3;color:#687368}
+.profile-contact{display:flex;align-items:center;gap:7px;min-width:0;margin:0;color:#79847d;font-size:11px}
+.profile-contact svg{width:13px;height:13px;flex:0 0 13px;color:#89958e}
+.profile-contact span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profile-dropdown-actions{padding:9px}
+.profile-session{display:flex;align-items:center;gap:7px;padding:7px 8px;color:#748178;font-size:11px}
+.profile-session svg{width:15px;height:15px;color:#64816e}
+.profile-logout{width:100%;display:flex;align-items:center;gap:8px;margin-top:3px;padding:9px 10px;border:0;border-radius:8px;background:transparent;color:#855e58;text-align:left;font-size:12px;font-weight:650;transition:background-color 150ms ease,color 150ms ease}
+.profile-logout:hover{background:#f8efec;color:#75473f}
+.profile-logout svg{width:15px;height:15px}
+@keyframes profile-menu-enter{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:560px){.profile-name{display:none}.profile-trigger{min-height:40px;padding-right:7px}}
+@media(prefers-reduced-motion:reduce){.profile-dropdown{animation:none}}
