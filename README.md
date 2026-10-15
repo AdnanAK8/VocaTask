@@ -21,8 +21,8 @@ Speak naturally in **any language** (English, Hindi, Punjabi, Hinglish, Spanish,
 * **✅ Pre-Save AI Confirmation Sheet:**
   * Clean review modal allowing users to edit the parsed title, pick dates, or adjust categories before saving.
   * Celebratory confetti animation upon task creation.
-* **⚡ Fast, with Local Development Caching:**
-  * SQLite storage for local development, with successful task responses cached in browser storage.
+* **⚡ Durable PostgreSQL Storage:**
+  * Tasks and authentication records use PostgreSQL, with successful task responses cached in browser storage.
   * Production task reads and writes require a reachable backend; browser cache is not a substitute for durable backend storage.
 
 * **🔐 Authentication UI:**
@@ -47,7 +47,7 @@ flowchart TD
     subgraph Backend ["FastAPI Server (Python)"]
         API["POST /api/voice/process-text"]
         LLM["AI Parser & Multilingual Date Normalizer"]
-        DB[(SQLite Persistent Storage)]
+        DB[(PostgreSQL Persistent Storage)]
     end
 
     MIC -->|Live Transcribed Text| API
@@ -96,7 +96,7 @@ copy .env.example .env
 # Mac / Linux:
 cp .env.example .env
 ```
-Open `backend/.env` and add any provider keys you want to use:
+Open `backend/.env` and add any provider keys and PostgreSQL settings you want to use:
 
 ```env
 # Google Gemini (Recommended - free tier via Google AI Studio)
@@ -110,6 +110,14 @@ GROQ_API_KEY=your_groq_api_key_here
 
 # OpenAI (Alternative for GPT-4o-mini / Whisper)
 OPENAI_API_KEY=your_openai_api_key_here
+
+# PostgreSQL through the SSH tunnel below
+PGHOST=localhost
+PGPORT=5433
+PGDATABASE=vocatask
+PGUSER=vocatask_user
+PGPASSWORD=your_database_password
+JWT_SECRET_KEY=replace-with-a-long-random-secret
 ```
 
 **Security note:** `backend/.env` is ignored by Git and must never be committed. Use your own provider keys or share them only through an approved secret manager, never through GitHub, chat, or a committed file.
@@ -123,6 +131,24 @@ The backend looks for environment configuration in this order:
 3. Repository-root `.env`
 4. `~/.voicetasks.env` (for example, `C:\Users\<username>\.voicetasks.env`)
 5. Operating system or container environment variables
+
+#### PostgreSQL and Local SSH Tunnel
+
+The backend accepts either `DATABASE_URL` or the `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD` variables. For local development, keep PostgreSQL private on EC2 and open this SSH tunnel in a separate terminal:
+
+```powershell
+ssh -i <path-to-key.pem> -N -L 5433:127.0.0.1:5432 <ec2-user>@<ec2-public-dns>
+```
+
+Set the values above in `backend/.env`; `PGPASSWORD` must be the database password and must not be committed. Install dependencies with `pip install -r requirements.txt`, then start the backend from `backend` with `python run.py`. The API is at `http://127.0.0.1:8000`.
+
+Verify the configured connection without printing credentials:
+
+```powershell
+python -c "from app.core.database import get_db_connection; c=get_db_connection(); conn=c.__enter__(); print(conn.execute('SELECT current_database(), current_user').fetchone()); c.__exit__(None, None, None)"
+```
+
+Startup creates missing tables without replacing existing ones and adds nullable `user_id` only if it is absent. It does not insert sample rows. Inspect the target schema through `information_schema.columns` before the first deployment. API integration tests require a separate `TEST_DATABASE_URL` whose database name ends in `_test`; without it, those tests are skipped. Unit tests use mocks and never modify PostgreSQL.
 
 #### API configuration and limits
 
@@ -180,6 +206,9 @@ cd backend
 .\venv\Scripts\python.exe -m unittest discover -s tests -v
 # Mac/Linux:
 python -m unittest discover -s tests -v
+```
+
+Task/auth API integration tests are skipped unless `TEST_DATABASE_URL` points to a separate database ending in `_test`.
 
 #### Frontend Linter & Build Verification
 
@@ -221,7 +250,7 @@ Some voice/API tests call the configured external AI provider. When provider key
 1. Redeploy the frontend after setting `VITE_API_URL`. Set backend `CORS_ORIGINS` to the exact Amplify or CloudFront origin, including `https://` and excluding any path.
 1. Verify `GET <backend-url>/health`, `GET <backend-url>/api/voice/status`, and voice/task requests in the browser Network tab. A `404` usually means an API route or gateway stage is missing/not deployed; a CORS error means the origin or gateway CORS configuration does not match.
 
-If deploying the backend behind API Gateway and Lambda, configure a Lambda proxy integration for the root and `/{proxy+}` routes, deploy the stage, and allow the required methods and headers at the gateway. The screenshot's `execute-api` URL indicates this API Gateway path rather than an App Runner hostname. See [AWS_DEPLOYMENT.md](AWS_DEPLOYMENT.md) for detailed AWS steps.
+If deploying the backend behind API Gateway and Lambda, configure a Lambda proxy integration for the root and `/{proxy+}` routes, deploy the stage, and allow the required methods and headers at the gateway. A developer SSH tunnel is not available to AWS workloads; the backend must use private VPC connectivity to the EC2 PostgreSQL host. See [AWS_DEPLOYMENT.md](AWS_DEPLOYMENT.md) for network and security-group steps.
 ### Docker Compose
 
 From the repository root, optionally create a root `.env` file for backend provider keys (do not commit it), then run:
@@ -230,7 +259,7 @@ From the repository root, optionally create a root `.env` file for backend provi
 docker compose up --build
 ```
 
-Open `http://localhost`. The frontend container uses the same-origin `/api` path and Nginx proxies it to the backend container. The API is also available directly at `http://localhost:8000`. The compose configuration stores SQLite data in a Docker volume; production AWS deployments need a durable database/storage configuration because container-local SQLite files may not survive replacement or scale-out.
+Open `http://localhost`. The frontend container uses the same-origin `/api` path and Nginx proxies it to the backend container. The API is also available directly at `http://localhost:8000`. Docker Compose expects `PGPASSWORD` or `DATABASE_URL` in the repository-root `.env`; its default host is `host.docker.internal` because the SSH tunnel runs on the host.
 
 ### Production Security Checklist
 
@@ -238,7 +267,7 @@ Open `http://localhost`. The frontend container uses the same-origin `/api` path
 * Configure exact CORS origins and gateway-level rate limits. CORS does not prevent direct API clients from calling a public endpoint.
 * Before using real personal data, require verified authentication on every task operation and enforce ownership using the authenticated identity. Do not trust a caller-supplied `X-User-Id` header.
 * Replace the placeholder Google/Facebook flows with real provider SDK tokens and verification. Replace the simulated phone OTP flow with a real SMS provider before production use.
-* Use durable shared storage for production tasks; local SQLite is suitable for development/single-instance use, not horizontally scaled deployments.
+* Keep PostgreSQL private and reachable only from trusted backend security groups or through the SSH tunnel used by local developers.
 * HTTPS is required for browser microphone access.
 ---
 

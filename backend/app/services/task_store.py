@@ -1,19 +1,14 @@
-import sqlite3
 import uuid
 from datetime import datetime
 from typing import List, Optional
-from app.core.config import settings
+from app.core.database import get_db_connection
 from app.schemas.task import Task, TaskCreate, TaskUpdate
 
-def get_db_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(settings.DATABASE_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
 
-def init_db():
-    conn = get_db_connection()
-    with conn:
-        conn.execute("""
+def init_db() -> None:
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
@@ -30,40 +25,18 @@ def init_db():
                 user_id TEXT
             )
         """)
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA table_info(tasks)")
-        columns = [row[1] for row in cursor.fetchall()]
-        if "user_id" not in columns:
-            try:
-                conn.execute("ALTER TABLE tasks ADD COLUMN user_id TEXT")
-            except Exception:
-                pass
+            cursor.execute("""
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = 'tasks'
+                  AND column_name = 'user_id'
+            """)
+            if cursor.fetchone() is None:
+                cursor.execute("ALTER TABLE tasks ADD COLUMN user_id TEXT")
 
-        cursor.execute("SELECT COUNT(*) FROM tasks")
-        count = cursor.fetchone()[0]
-        if count == 0:
-            today_str = datetime.now().strftime("%Y-%m-%d")
-            now_iso = datetime.now().isoformat()
-            sample_tasks = [
-                (str(uuid.uuid4()), "Submit DBMS assignment", "Database assignment submission", today_str, "10:00", "medium", "study", "pending", 1, "Kal subah 10 baje database ka assignment submit karna hai", "hinglish", now_iso, None),
-                (str(uuid.uuid4()), "Call Rahul at 6 PM", "Call Rahul about project updates", today_str, "18:00", "medium", "work", "pending", 1, "Call Rahul at 6 PM", "en", now_iso, None),
-                (str(uuid.uuid4()), "Gym at 7 PM", "Evening workout session", today_str, "19:00", "low", "health", "pending", 1, "Gym at 7 PM", "en", now_iso, None),
-            ]
-            conn.executemany("""
-                INSERT INTO tasks (
-                    id, title, description, scheduled_date, scheduled_time,
-                    priority, category, status, reminder_required,
-                    original_transcript, language, created_at, user_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, sample_tasks)
-    conn.close()
 
-# Initialize database schema on load
-init_db()
-
-def _row_to_task(row: sqlite3.Row) -> Task:
-    cols = row.keys()
-    user_id = row["user_id"] if "user_id" in cols else None
+def _row_to_task(row: dict) -> Task:
     return Task(
         id=row["id"],
         title=row["title"],
@@ -76,31 +49,44 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         reminder_required=bool(row["reminder_required"]),
         original_transcript=row["original_transcript"],
         language=row["language"],
-        user_id=user_id,
+        user_id=row.get("user_id"),
         created_at=row["created_at"]
     )
+
 
 def create_task(data: TaskCreate, user_id: Optional[str] = None) -> Task:
     task_id = str(uuid.uuid4())
     now_iso = datetime.now().isoformat()
     effective_user_id = user_id or getattr(data, "user_id", None)
 
-    conn = get_db_connection()
-    with conn:
-        conn.execute("""
-            INSERT INTO tasks (
-                id, title, description, scheduled_date, scheduled_time,
-                priority, category, status, reminder_required,
-                original_transcript, language, created_at, user_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
-        """, (
-            task_id, data.title, data.description, data.scheduled_date,
-            data.scheduled_time, data.priority, data.category,
-            1 if data.reminder_required else 0, data.original_transcript,
-            data.language, now_iso, effective_user_id
-        ))
-    conn.close()
-
+    params = (
+        task_id,
+        data.title,
+        data.description,
+        data.scheduled_date,
+        data.scheduled_time,
+        data.priority,
+        data.category,
+        1 if data.reminder_required else 0,
+        data.original_transcript,
+        data.language,
+        now_iso,
+        effective_user_id,
+    )
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO tasks (
+                    id, title, description, scheduled_date, scheduled_time,
+                    priority, category, status, reminder_required,
+                    original_transcript, language, created_at, user_id
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s, %s, %s, %s
+                )
+                """,
+                params,
+            )
     return Task(
         id=task_id,
         title=data.title,
@@ -117,44 +103,51 @@ def create_task(data: TaskCreate, user_id: Optional[str] = None) -> Task:
         created_at=now_iso
     )
 
-def get_tasks(status: Optional[str] = None, user_id: Optional[str] = None) -> List[Task]:
-    conn = get_db_connection()
-    cursor = conn.cursor()
 
+def get_tasks(
+    status: Optional[str] = None,
+    user_id: Optional[str] = None,
+) -> List[Task]:
     query = "SELECT * FROM tasks"
     conditions = []
     params = []
-
     if status:
-        conditions.append("status = ?")
+        conditions.append("status = %s")
         params.append(status)
-
     if user_id:
-        conditions.append("(user_id = ? OR user_id IS NULL)")
+        conditions.append("(user_id = %s OR user_id IS NULL)")
         params.append(user_id)
-
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
-
     query += " ORDER BY status ASC, scheduled_date ASC, scheduled_time ASC"
-    cursor.execute(query, params)
-
-    rows = cursor.fetchall()
-    conn.close()
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
     return [_row_to_task(row) for row in rows]
 
-def get_task(task_id: str, user_id: Optional[str] = None) -> Optional[Task]:
-    conn = get_db_connection()
-    cursor = conn.cursor()
+
+def get_task(
+    task_id: str,
+    user_id: Optional[str] = None,
+) -> Optional[Task]:
+    query = "SELECT * FROM tasks WHERE id = %s"
+    params = [task_id]
     if user_id:
-        cursor.execute("SELECT * FROM tasks WHERE id = ? AND (user_id = ? OR user_id IS NULL)", (task_id, user_id))
-    else:
-        cursor.execute("SELECT * FROM tasks WHERE id = ?", (task_id,))
-    row = cursor.fetchone()
-    conn.close()
+        query += " AND (user_id = %s OR user_id IS NULL)"
+        params.append(user_id)
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, params)
+            row = cursor.fetchone()
     return _row_to_task(row) if row else None
 
-def update_task(task_id: str, update_data: TaskUpdate, user_id: Optional[str] = None) -> Optional[Task]:
+
+def update_task(
+    task_id: str,
+    update_data: TaskUpdate,
+    user_id: Optional[str] = None,
+) -> Optional[Task]:
     task = get_task(task_id, user_id=user_id)
     if not task:
         return None
@@ -175,31 +168,40 @@ def update_task(task_id: str, update_data: TaskUpdate, user_id: Optional[str] = 
     if update_data.status is not None:
         updates["status"] = update_data.status
     if update_data.reminder_required is not None:
-        updates["reminder_required"] = 1 if update_data.reminder_required else 0
+        updates["reminder_required"] = (
+            1 if update_data.reminder_required else 0
+        )
 
     if updates:
-        set_clauses = [f"{k} = ?" for k in updates.keys()]
+        set_clauses = [f"{key} = %s" for key in updates]
         values = list(updates.values()) + [task_id]
-        sql = f"UPDATE tasks SET {', '.join(set_clauses)} WHERE id = ?"
-        conn = get_db_connection()
-        with conn:
-            conn.execute(sql, values)
-        conn.close()
+        sql = f"UPDATE tasks SET {', '.join(set_clauses)} WHERE id = %s"
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, values)
 
     return get_task(task_id, user_id=user_id)
 
+
 def delete_task(task_id: str, user_id: Optional[str] = None) -> bool:
-    conn = get_db_connection()
-    with conn:
-        if user_id:
-            cursor = conn.execute("DELETE FROM tasks WHERE id = ? AND (user_id = ? OR user_id IS NULL)", (task_id, user_id))
-        else:
-            cursor = conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
-        deleted = cursor.rowcount > 0
-    conn.close()
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            if user_id:
+                cursor.execute(
+                    "DELETE FROM tasks WHERE id = %s AND "
+                    "(user_id = %s OR user_id IS NULL)",
+                    (task_id, user_id),
+                )
+            else:
+                cursor.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
+            deleted = cursor.rowcount > 0
     return deleted
 
-def toggle_task_status(task_id: str, user_id: Optional[str] = None) -> Optional[Task]:
+
+def toggle_task_status(
+    task_id: str,
+    user_id: Optional[str] = None,
+) -> Optional[Task]:
     task = get_task(task_id, user_id=user_id)
     if not task:
         return None

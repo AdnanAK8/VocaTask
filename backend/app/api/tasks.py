@@ -1,6 +1,7 @@
 import logging
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query, Header
+from app.core.database import DatabaseUnavailableError
 from app.schemas.task import Task, TaskCreate, TaskUpdate
 from app.services import task_store, auth_store
 
@@ -19,7 +20,7 @@ def extract_user_id(authorization: Optional[str] = None, x_user_id: Optional[str
     return None
 
 @router.get("", response_model=List[Task])
-async def list_tasks(
+def list_tasks(
     status: Optional[str] = Query(None, pattern="^(pending|completed)$"),
     authorization: Optional[str] = Header(None),
     x_user_id: Optional[str] = Header(None)
@@ -29,7 +30,7 @@ async def list_tasks(
     return task_store.get_tasks(status=status, user_id=user_id)
 
 @router.post("", response_model=Task, status_code=201)
-async def create_task(
+def create_task(
     task_in: TaskCreate,
     authorization: Optional[str] = Header(None),
     x_user_id: Optional[str] = Header(None)
@@ -38,12 +39,14 @@ async def create_task(
     try:
         user_id = extract_user_id(authorization, x_user_id) or task_in.user_id
         return task_store.create_task(task_in, user_id=user_id)
+    except DatabaseUnavailableError:
+        raise
     except Exception as e:
-        logger.error(f"Error creating task: {e}")
+        logger.error("Error creating task (%s)", type(e).__name__)
         raise HTTPException(status_code=500, detail="Failed to create task.")
 
 @router.get("/{task_id}", response_model=Task)
-async def get_single_task(
+def get_single_task(
     task_id: str,
     authorization: Optional[str] = Header(None),
     x_user_id: Optional[str] = Header(None)
@@ -56,7 +59,7 @@ async def get_single_task(
     return task
 
 @router.patch("/{task_id}", response_model=Task)
-async def update_task_details(
+def update_task_details(
     task_id: str,
     updates: TaskUpdate,
     authorization: Optional[str] = Header(None),
@@ -70,7 +73,7 @@ async def update_task_details(
     return task
 
 @router.patch("/{task_id}/toggle", response_model=Task)
-async def toggle_task_status(
+def toggle_task_status(
     task_id: str,
     authorization: Optional[str] = Header(None),
     x_user_id: Optional[str] = Header(None)
@@ -83,7 +86,7 @@ async def toggle_task_status(
     return task
 
 @router.delete("/{task_id}")
-async def delete_task(
+def delete_task(
     task_id: str,
     authorization: Optional[str] = Header(None),
     x_user_id: Optional[str] = Header(None)

@@ -1,4 +1,3 @@
-import os
 import time
 import json
 import uuid
@@ -7,20 +6,15 @@ import base64
 import hashlib
 import secrets
 import logging
-import sqlite3
 from datetime import datetime, timezone
 from typing import Optional, Tuple, Dict, Any
 import httpx
 
 from app.core.config import settings
+from app.core.database import get_db_connection
 from app.schemas.auth import User, AuthProvider
 
 logger = logging.getLogger("auth_store")
-
-def get_db_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(settings.DATABASE_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
 
 def base64url_encode(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b'=').decode('ascii')
@@ -45,8 +39,13 @@ def verify_password(password: str, password_hash: str, salt: str) -> bool:
     hashed, _ = hash_password(password, salt)
     return secrets.compare_digest(hashed, password_hash)
 
+def _require_jwt_secret() -> None:
+    if not settings.JWT_SECRET_KEY:
+        raise RuntimeError("JWT_SECRET_KEY is not configured.")
+
 def create_access_token(user_id: str, name: str, email: Optional[str] = None, expires_in_seconds: int = 86400 * 7) -> str:
     """Generate a tamper-proof signed JWT using HMAC-SHA256."""
+    _require_jwt_secret()
     header = {"alg": "HS256", "typ": "JWT"}
     now = int(time.time())
     payload = {
@@ -69,6 +68,8 @@ def create_access_token(user_id: str, name: str, email: Optional[str] = None, ex
 
 def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
     """Decode and verify HMAC-SHA256 JWT signature and expiration."""
+    if not settings.JWT_SECRET_KEY:
+        return None
     try:
         parts = token.strip().split('.')
         if len(parts) != 3:
@@ -93,10 +94,10 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
         return None
 
 def init_auth_db():
-    """Create auth tables and migrate existing tables if needed."""
-    conn = get_db_connection()
-    with conn:
-        conn.execute("""
+    """Create auth tables without changing existing user or OTP data."""
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -110,7 +111,7 @@ def init_auth_db():
                 last_login_at TEXT NOT NULL
             )
         """)
-        conn.execute("""
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS otp_codes (
                 phone TEXT PRIMARY KEY,
                 code TEXT NOT NULL,
@@ -119,22 +120,7 @@ def init_auth_db():
             )
         """)
 
-        # Check if tasks table has user_id column; if not, add it safely
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA table_info(tasks)")
-        columns = [row[1] for row in cursor.fetchall()]
-        if "user_id" not in columns:
-            try:
-                conn.execute("ALTER TABLE tasks ADD COLUMN user_id TEXT")
-                logger.info("Migrated tasks table: added user_id column")
-            except Exception as e:
-                logger.warning(f"Could not add user_id column: {e}")
-    conn.close()
-
-# Auto-initialize auth database on load
-init_auth_db()
-
-def _user_from_row(row: sqlite3.Row) -> User:
+def _user_from_row(row: dict) -> User:
     return User(
         id=row["id"],
         name=row["name"],
@@ -147,30 +133,28 @@ def _user_from_row(row: sqlite3.Row) -> User:
     )
 
 def get_user_by_id(user_id: str) -> Optional[User]:
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-    row = cursor.fetchone()
-    conn.close()
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+            row = cursor.fetchone()
     return _user_from_row(row) if row else None
 
-def get_user_by_email(email: str) -> Optional[sqlite3.Row]:
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE LOWER(email) = LOWER(?)", (email.strip(),))
-    row = cursor.fetchone()
-    conn.close()
+def get_user_by_email(email: str) -> Optional[dict]:
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM users WHERE LOWER(email) = LOWER(%s)", (email.strip(),))
+            row = cursor.fetchone()
     return row
 
-def get_user_by_phone(phone: str) -> Optional[sqlite3.Row]:
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE phone = ?", (phone.strip(),))
-    row = cursor.fetchone()
-    conn.close()
+def get_user_by_phone(phone: str) -> Optional[dict]:
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM users WHERE phone = %s", (phone.strip(),))
+            row = cursor.fetchone()
     return row
 
 def register_email_user(name: str, email: str, password: str) -> Tuple[User, str]:
+    _require_jwt_secret()
     email_clean = email.strip().lower()
     name_clean = name.strip()
     if get_user_by_email(email_clean):
@@ -181,13 +165,12 @@ def register_email_user(name: str, email: str, password: str) -> Tuple[User, str
     now_iso = datetime.now(timezone.utc).isoformat()
     avatar = f"https://api.dicebear.com/7.x/initials/svg?seed={name_clean}"
 
-    conn = get_db_connection()
-    with conn:
-        conn.execute("""
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
             INSERT INTO users (id, name, email, phone, password_hash, salt, provider, avatar_url, created_at, last_login_at)
-            VALUES (?, ?, ?, NULL, ?, ?, 'email', ?, ?, ?)
+            VALUES (%s, %s, %s, NULL, %s, %s, 'email', %s, %s, %s)
         """, (user_id, name_clean, email_clean, pw_hash, salt, avatar, now_iso, now_iso))
-    conn.close()
 
     user = User(
         id=user_id,
@@ -203,6 +186,7 @@ def register_email_user(name: str, email: str, password: str) -> Tuple[User, str
     return user, token
 
 def login_email_user(email: str, password: str) -> Tuple[User, str]:
+    _require_jwt_secret()
     email_clean = email.strip().lower()
     row = get_user_by_email(email_clean)
     if not row:
@@ -215,10 +199,9 @@ def login_email_user(email: str, password: str) -> Tuple[User, str]:
         raise ValueError("Incorrect password.")
 
     now_iso = datetime.now(timezone.utc).isoformat()
-    conn = get_db_connection()
-    with conn:
-        conn.execute("UPDATE users SET last_login_at = ? WHERE id = ?", (now_iso, row["id"]))
-    conn.close()
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE users SET last_login_at = %s WHERE id = %s", (now_iso, row["id"]))
 
     user = _user_from_row(row)
     user.last_login_at = now_iso
@@ -232,82 +215,75 @@ def generate_phone_otp(phone: str, name: Optional[str] = None) -> Tuple[str, int
     expires_at = int(time.time()) + 600
     now_iso = datetime.now(timezone.utc).isoformat()
 
-    conn = get_db_connection()
-    with conn:
-        conn.execute("""
-            INSERT OR REPLACE INTO otp_codes (phone, code, expires_at, created_at)
-            VALUES (?, ?, ?, ?)
-        """, (phone_clean, code, expires_at, now_iso))
-    conn.close()
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO otp_codes (phone, code, expires_at, created_at)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (phone) DO UPDATE SET
+                    code = EXCLUDED.code,
+                    expires_at = EXCLUDED.expires_at,
+                    created_at = EXCLUDED.created_at
+            """, (phone_clean, code, expires_at, now_iso))
 
     logger.info(f"[SMS SIMULATOR] Sent OTP {code} to phone {phone_clean}")
     return code, 600
 
 def verify_phone_otp(phone: str, code: str, name: Optional[str] = None) -> Tuple[User, str]:
+    _require_jwt_secret()
     phone_clean = phone.strip()
     code_clean = code.strip()
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM otp_codes WHERE phone = ?", (phone_clean,))
-    otp_row = cursor.fetchone()
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM otp_codes WHERE phone = %s", (phone_clean,))
+            otp_row = cursor.fetchone()
+            is_demo_test = code_clean == "123456"
+            if not is_demo_test:
+                if not otp_row:
+                    raise ValueError("No verification code found for this phone number. Please request a new code.")
+                if otp_row["expires_at"] < int(time.time()):
+                    raise ValueError("Verification code has expired. Please request a new one.")
+                if otp_row["code"] != code_clean:
+                    raise ValueError("Invalid verification code. Please check and try again.")
 
-    # Allow fixed demo test code '123456' for instant zero-friction developer testing, or check stored code
-    is_demo_test = (code_clean == "123456")
+            cursor.execute("DELETE FROM otp_codes WHERE phone = %s", (phone_clean,))
+            cursor.execute("SELECT * FROM users WHERE phone = %s", (phone_clean,))
+            user_row = cursor.fetchone()
+            now_iso = datetime.now(timezone.utc).isoformat()
 
-    if not is_demo_test:
-        if not otp_row:
-            conn.close()
-            raise ValueError("No verification code found for this phone number. Please request a new code.")
-        if otp_row["expires_at"] < int(time.time()):
-            conn.close()
-            raise ValueError("Verification code has expired. Please request a new one.")
-        if otp_row["code"] != code_clean:
-            conn.close()
-            raise ValueError("Invalid verification code. Please check and try again.")
-
-    # Code is valid; consume it
-    with conn:
-        conn.execute("DELETE FROM otp_codes WHERE phone = ?", (phone_clean,))
-
-        # Check if user already exists
-        cursor.execute("SELECT * FROM users WHERE phone = ?", (phone_clean,))
-        user_row = cursor.fetchone()
-        now_iso = datetime.now(timezone.utc).isoformat()
-
-        if user_row:
-            user_id = user_row["id"]
-            user_name = name.strip() if name and name.strip() else user_row["name"]
-            conn.execute("UPDATE users SET last_login_at = ?, name = ? WHERE id = ?", (now_iso, user_name, user_id))
-            user = User(
-                id=user_id,
-                name=user_name,
-                email=user_row["email"],
-                phone=phone_clean,
-                provider=user_row["provider"],
-                avatar_url=user_row["avatar_url"],
-                created_at=user_row["created_at"],
-                last_login_at=now_iso
-            )
-        else:
-            user_id = str(uuid.uuid4())
-            user_name = name.strip() if (name and name.strip()) else f"User {phone_clean[-4:]}"
-            avatar = f"https://api.dicebear.com/7.x/initials/svg?seed={user_name}"
-            conn.execute("""
-                INSERT INTO users (id, name, email, phone, password_hash, salt, provider, avatar_url, created_at, last_login_at)
-                VALUES (?, ?, NULL, ?, NULL, NULL, 'phone', ?, ?, ?)
-            """, (user_id, user_name, phone_clean, avatar, now_iso, now_iso))
-            user = User(
-                id=user_id,
-                name=user_name,
-                email=None,
-                phone=phone_clean,
-                provider="phone",
-                avatar_url=avatar,
-                created_at=now_iso,
-                last_login_at=now_iso
-            )
-    conn.close()
+            if user_row:
+                user_id = user_row["id"]
+                user_name = name.strip() if name and name.strip() else user_row["name"]
+                cursor.execute("UPDATE users SET last_login_at = %s, name = %s WHERE id = %s", (now_iso, user_name, user_id))
+                user = User(
+                    id=user_id,
+                    name=user_name,
+                    email=user_row["email"],
+                    phone=phone_clean,
+                    provider=user_row["provider"],
+                    avatar_url=user_row["avatar_url"],
+                    created_at=user_row["created_at"],
+                    last_login_at=now_iso
+                )
+            else:
+                user_id = str(uuid.uuid4())
+                user_name = name.strip() if (name and name.strip()) else f"User {phone_clean[-4:]}"
+                avatar = f"https://api.dicebear.com/7.x/initials/svg?seed={user_name}"
+                cursor.execute("""
+                    INSERT INTO users (id, name, email, phone, password_hash, salt, provider, avatar_url, created_at, last_login_at)
+                    VALUES (%s, %s, NULL, %s, NULL, NULL, 'phone', %s, %s, %s)
+                """, (user_id, user_name, phone_clean, avatar, now_iso, now_iso))
+                user = User(
+                    id=user_id,
+                    name=user_name,
+                    email=None,
+                    phone=phone_clean,
+                    provider="phone",
+                    avatar_url=avatar,
+                    created_at=now_iso,
+                    last_login_at=now_iso
+                )
 
     token = create_access_token(user.id, user.name)
     return user, token
@@ -353,7 +329,8 @@ async def authenticate_google(token: str, name_hint: Optional[str] = None, email
     if not verified_avatar:
         verified_avatar = f"https://api.dicebear.com/7.x/initials/svg?seed={verified_name}"
 
-    return _upsert_social_user("google", verified_name, verified_email, verified_avatar)
+    from starlette.concurrency import run_in_threadpool
+    return await run_in_threadpool(_upsert_social_user, "google", verified_name, verified_email, verified_avatar)
 
 async def authenticate_facebook(token: str, name_hint: Optional[str] = None, email_hint: Optional[str] = None, avatar_hint: Optional[str] = None) -> Tuple[User, str]:
     """Verify Facebook Login access token with Graph API."""
@@ -389,56 +366,54 @@ async def authenticate_facebook(token: str, name_hint: Optional[str] = None, ema
     if not verified_avatar:
         verified_avatar = f"https://api.dicebear.com/7.x/initials/svg?seed={verified_name}"
 
-    return _upsert_social_user("facebook", verified_name, verified_email, verified_avatar)
+    from starlette.concurrency import run_in_threadpool
+    return await run_in_threadpool(_upsert_social_user, "facebook", verified_name, verified_email, verified_avatar)
 
 def _upsert_social_user(provider: AuthProvider, name: str, email: str, avatar_url: Optional[str]) -> Tuple[User, str]:
+    _require_jwt_secret()
     email_clean = email.strip().lower()
     name_clean = name.strip()
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE LOWER(email) = ?", (email_clean,))
-    existing = cursor.fetchone()
-    now_iso = datetime.now(timezone.utc).isoformat()
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM users WHERE LOWER(email) = %s", (email_clean,))
+            existing = cursor.fetchone()
+            now_iso = datetime.now(timezone.utc).isoformat()
 
-    if existing:
-        user_id = existing["id"]
-        # Update name and avatar if provided
-        final_avatar = avatar_url or existing["avatar_url"]
-        with conn:
-            conn.execute("""
-                UPDATE users SET name = ?, avatar_url = ?, last_login_at = ?
-                WHERE id = ?
-            """, (name_clean, final_avatar, now_iso, user_id))
-        user = User(
-            id=user_id,
-            name=name_clean,
-            email=email_clean,
-            phone=existing["phone"],
-            provider=existing["provider"],
-            avatar_url=final_avatar,
-            created_at=existing["created_at"],
-            last_login_at=now_iso
-        )
-    else:
-        user_id = str(uuid.uuid4())
-        final_avatar = avatar_url or f"https://api.dicebear.com/7.x/initials/svg?seed={name_clean}"
-        with conn:
-            conn.execute("""
-                INSERT INTO users (id, name, email, phone, password_hash, salt, provider, avatar_url, created_at, last_login_at)
-                VALUES (?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?)
-            """, (user_id, name_clean, email_clean, provider, final_avatar, now_iso, now_iso))
-        user = User(
-            id=user_id,
-            name=name_clean,
-            email=email_clean,
-            phone=None,
-            provider=provider,
-            avatar_url=final_avatar,
-            created_at=now_iso,
-            last_login_at=now_iso
-        )
-    conn.close()
+            if existing:
+                user_id = existing["id"]
+                final_avatar = avatar_url or existing["avatar_url"]
+                cursor.execute("""
+                    UPDATE users SET name = %s, avatar_url = %s, last_login_at = %s
+                    WHERE id = %s
+                """, (name_clean, final_avatar, now_iso, user_id))
+                user = User(
+                    id=user_id,
+                    name=name_clean,
+                    email=email_clean,
+                    phone=existing["phone"],
+                    provider=existing["provider"],
+                    avatar_url=final_avatar,
+                    created_at=existing["created_at"],
+                    last_login_at=now_iso
+                )
+            else:
+                user_id = str(uuid.uuid4())
+                final_avatar = avatar_url or f"https://api.dicebear.com/7.x/initials/svg?seed={name_clean}"
+                cursor.execute("""
+                    INSERT INTO users (id, name, email, phone, password_hash, salt, provider, avatar_url, created_at, last_login_at)
+                    VALUES (%s, %s, %s, NULL, NULL, NULL, %s, %s, %s, %s)
+                """, (user_id, name_clean, email_clean, provider, final_avatar, now_iso, now_iso))
+                user = User(
+                    id=user_id,
+                    name=name_clean,
+                    email=email_clean,
+                    phone=None,
+                    provider=provider,
+                    avatar_url=final_avatar,
+                    created_at=now_iso,
+                    last_login_at=now_iso
+                )
 
     token = create_access_token(user.id, user.name, user.email)
     return user, token

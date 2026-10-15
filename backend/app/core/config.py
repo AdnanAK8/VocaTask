@@ -2,6 +2,7 @@ import os
 from typing import List
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
+from psycopg.conninfo import make_conninfo
 
 # Search for environment variables and secrets in hierarchical order:
 # 1. Custom explicit path: VOICETASKS_ENV_FILE
@@ -53,15 +54,36 @@ class Settings(BaseSettings):
     AUDIO_RATE_LIMIT_PER_MINUTE: int = 5
     MAX_AUDIO_UPLOAD_BYTES: int = 15 * 1024 * 1024
 
-    # Database & Storage
-    DATABASE_PATH: str = "tasks.db"
+    # PostgreSQL. Set DATABASE_URL or provide the PG* values below.
+    DATABASE_URL: str = ""
+    PGHOST: str = "localhost"
+    PGPORT: int = 5433
+    PGDATABASE: str = "vocatask"
+    PGUSER: str = "vocatask_user"
+    PGPASSWORD: str = ""
+    DATABASE_POOL_MAX_SIZE: int = 5
+    DATABASE_POOL_TIMEOUT: float = 10.0
 
     # Authentication & OAuth Settings
-    JWT_SECRET_KEY: str = "voicetasks-ai-jwt-super-secret-key-production-change"
+    JWT_SECRET_KEY: str = ""
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
     FACEBOOK_APP_ID: str = ""
     FACEBOOK_APP_SECRET: str = ""
+
+    @property
+    def database_connection_string(self) -> str:
+        if self.DATABASE_URL.strip():
+            return self.DATABASE_URL.strip()
+        if not self.PGPASSWORD:
+            raise ValueError("Set DATABASE_URL or PGPASSWORD to configure PostgreSQL.")
+        return make_conninfo(
+            host=self.PGHOST,
+            port=self.PGPORT,
+            dbname=self.PGDATABASE,
+            user=self.PGUSER,
+            password=self.PGPASSWORD,
+        )
 
     @property
     def effective_elevenlabs_key(self) -> str:

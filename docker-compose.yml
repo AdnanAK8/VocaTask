@@ -10,14 +10,18 @@ services:
     environment:
       - PORT=8000
       - DEFAULT_TIMEZONE=Asia/Kolkata
-      - DATABASE_PATH=/app/data/tasks.db
+      - DATABASE_URL=${DATABASE_URL:-}
+      - PGHOST=${PGHOST:-host.docker.internal}
+      - PGPORT=${PGPORT:-5433}
+      - PGDATABASE=${PGDATABASE:-vocatask}
+      - PGUSER=${PGUSER:-vocatask_user}
+      - PGPASSWORD=${PGPASSWORD:-}
+      - DATABASE_POOL_MAX_SIZE=${DATABASE_POOL_MAX_SIZE:-2}
       - CORS_ORIGINS=["http://localhost", "http://localhost:80", "http://localhost:5173"]
       - GROQ_API_KEY=${GROQ_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - ELEVEN_LAB_API_KEY=${ELEVEN_LAB_API_KEY:-}
-    volumes:
-      - backend-data:/app/data
 
   frontend:
     build:
@@ -29,6 +33,3 @@ services:
       - "80:80"
     depends_on:
       - backend
-
-volumes:
-  backend-data:

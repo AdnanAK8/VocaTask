@@ -1,12 +1,17 @@
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from mangum import Mangum
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from app.core.config import settings
+from app.core.database import DatabaseUnavailableError
 from app.core.rate_limit import RateLimitMiddleware
 from app.api import tasks
 from app.api import voice
 from app.api import auth
+from app.services import auth_store, task_store
 
 
 logging.basicConfig(
@@ -15,11 +20,39 @@ logging.basicConfig(
 )
 logger = logging.getLogger("main")
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    try:
+        await run_in_threadpool(task_store.init_db)
+        await run_in_threadpool(auth_store.init_auth_db)
+    except (DatabaseUnavailableError, ValueError, Exception) as exc:
+        logger.warning(
+            "Database initialization deferred on startup (%s: %s). "
+            "Ensure PostgreSQL is running and credentials/tunnel are active.",
+            type(exc).__name__,
+            exc,
+        )
+    yield
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    description="Multilingual Voice-to-Task AI Assistant API with PWA support"
+    description="Multilingual Voice-to-Task AI Assistant API with PWA support",
+    lifespan=lifespan,
 )
+
+
+@app.exception_handler(DatabaseUnavailableError)
+async def database_unavailable_handler(
+    _request,
+    exc: DatabaseUnavailableError,
+):
+    logger.error("Database unavailable (%s)", type(exc).__name__)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Database temporarily unavailable."},
+    )
 
 # CORS is intentionally limited to explicitly configured frontend origins.
 app.add_middleware(
@@ -41,6 +74,7 @@ app.include_router(voice.router, prefix=settings.API_V1_STR)
 app.include_router(tasks.router, prefix=settings.API_V1_STR)
 app.include_router(auth.router, prefix=settings.API_V1_STR)
 
+
 @app.get("/health", tags=["Health"])
 async def health_check():
     return {
@@ -52,6 +86,7 @@ async def health_check():
         "groq_configured": bool(settings.GROQ_API_KEY),
         "openai_configured": bool(settings.effective_openai_key)
     }
+
 
 @app.get("/", tags=["Root"])
 async def root():

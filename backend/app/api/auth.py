@@ -1,6 +1,7 @@
 import logging
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Header, status
+from app.core.database import DatabaseUnavailableError
 
 from app.core.config import settings
 from app.schemas.auth import (
@@ -42,7 +43,7 @@ async def get_auth_config():
     )
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-async def register(body: RegisterRequest):
+def register(body: RegisterRequest):
     """Register a new user with Name, Email, and Password."""
     try:
         user, token = auth_store.register_email_user(
@@ -58,12 +59,14 @@ async def register(body: RegisterRequest):
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except DatabaseUnavailableError:
+        raise
     except Exception as e:
-        logger.error(f"Error during registration: {e}")
+        logger.error("Error during registration (%s)", type(e).__name__)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Registration failed.")
 
 @router.post("/login", response_model=AuthResponse)
-async def login(body: LoginRequest):
+def login(body: LoginRequest):
     """Authenticate an existing user with Email and Password."""
     try:
         user, token = auth_store.login_email_user(
@@ -78,12 +81,14 @@ async def login(body: LoginRequest):
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+    except DatabaseUnavailableError:
+        raise
     except Exception as e:
-        logger.error(f"Error during login: {e}")
+        logger.error("Error during login (%s)", type(e).__name__)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Login failed.")
 
 @router.post("/phone/send-otp", response_model=OtpResponse)
-async def send_phone_otp(body: PhoneOtpRequest):
+def send_phone_otp(body: PhoneOtpRequest):
     """Generate and dispatch a 6-digit OTP code to the user's mobile number."""
     try:
         otp_code, expires_in = auth_store.generate_phone_otp(
@@ -97,12 +102,14 @@ async def send_phone_otp(body: PhoneOtpRequest):
             test_otp=otp_code,  # Provided in dev/testing mode so user can test seamlessly
             expires_in_seconds=expires_in
         )
+    except DatabaseUnavailableError:
+        raise
     except Exception as e:
-        logger.error(f"Error generating OTP: {e}")
+        logger.error("Error generating OTP (%s)", type(e).__name__)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to send OTP.")
 
 @router.post("/phone/verify", response_model=AuthResponse)
-async def verify_phone(body: PhoneVerifyRequest):
+def verify_phone(body: PhoneVerifyRequest):
     """Verify phone OTP and authenticate or provision user account."""
     try:
         user, token = auth_store.verify_phone_otp(
@@ -118,8 +125,10 @@ async def verify_phone(body: PhoneVerifyRequest):
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except DatabaseUnavailableError:
+        raise
     except Exception as e:
-        logger.error(f"Error verifying phone OTP: {e}")
+        logger.error("Error verifying phone OTP (%s)", type(e).__name__)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Phone verification failed.")
 
 @router.post("/google", response_model=AuthResponse)
@@ -138,6 +147,8 @@ async def google_auth(body: SocialAuthRequest):
             token=token,
             message=f"Google authentication successful! Welcome, {user.name}."
         )
+    except DatabaseUnavailableError:
+        raise
     except Exception as e:
         logger.error(f"Error in Google authentication: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Google authentication failed.")
@@ -158,12 +169,14 @@ async def facebook_auth(body: SocialAuthRequest):
             token=token,
             message=f"Facebook authentication successful! Welcome, {user.name}."
         )
+    except DatabaseUnavailableError:
+        raise
     except Exception as e:
         logger.error(f"Error in Facebook authentication: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Facebook authentication failed.")
 
 @router.get("/me", response_model=User)
-async def get_current_user_profile(authorization: Optional[str] = Header(None)):
+def get_current_user_profile(authorization: Optional[str] = Header(None)):
     """Retrieve current logged in user profile."""
     user = get_current_user_from_header(authorization)
     if not user:

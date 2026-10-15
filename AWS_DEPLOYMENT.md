@@ -38,7 +38,9 @@ This guide covers the smoothest and most cost-effective methods to deploy the fu
    * **Virtual CPU & Memory**: `1 vCPU, 2 GB` (or smallest available).
    * **Environment variables**:
      * `DEFAULT_TIMEZONE` = `Asia/Kolkata`
-     * `DATABASE_PATH` = `tasks.db`
+       * `DATABASE_URL` = secret PostgreSQL URL for the EC2 database, or configure `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD` separately
+       * `DATABASE_POOL_MAX_SIZE` = `5` (review against App Runner instance count and PostgreSQL connection capacity)
+      * `JWT_SECRET_KEY` = a long random secret stored in AWS Secrets Manager
      * `GROQ_API_KEY` = *your_groq_api_key* (optional, for Whisper/Llama)
      * `OPENAI_API_KEY` = *your_openai_api_key* (optional)
      * `GEMINI_API_KEY` = *your_gemini_api_key* (optional)
@@ -48,6 +50,33 @@ This guide covers the smoothest and most cost-effective methods to deploy the fu
    * `AUDIO_RATE_LIMIT_PER_MINUTE` = `5`
 6. Click **Create & Deploy**.
 7. Once deployed, copy your **Default domain** URL (e.g., `https://xxxxxxxxxx.us-east-1.awsapprunner.com`). Verify that `https://<YOUR_APP_RUNNER_URL>/health` returns `{"status":"ok"}`.
+
+### Connect App Runner to PostgreSQL on EC2
+
+The local `localhost:5433` SSH tunnel is for developer machines only. App Runner must use private VPC egress to the EC2 instance:
+
+1. Place the App Runner VPC connector subnets and the database EC2 instance in the same VPC, or configure private routing between their VPCs.
+2. Attach the VPC connector to the App Runner service. Ensure its subnets have routes to the EC2 private address.
+3. Configure the database security group to allow inbound TCP `5432` only from the VPC connector's security group. Do not allow `0.0.0.0/0` or a public internet source.
+4. Configure PostgreSQL to listen on the EC2 private interface and allow the backend source in `pg_hba.conf`; retain SSH access only from trusted developer IPs for local tunneling.
+5. Store `DATABASE_URL` (or the `PGPASSWORD` value) in AWS Secrets Manager and reference it as an App Runner secret. Use the EC2 private DNS name/address for `PGHOST`, port `5432`, database `vocatask`, and user `vocatask_user`. Never use `localhost:5433` in AWS.
+6. Deploy the backend and verify task reads/writes and `/health` from the deployed service. App Runner can reach this database only after the VPC connector, routes, PostgreSQL listener/host rules, and security groups are correct.
+
+The application reuses a bounded psycopg connection pool within each backend process. Keep `DATABASE_POOL_MAX_SIZE` low enough that the maximum across all App Runner instances fits PostgreSQL's connection limit. The application creates missing `tasks`, `users`, and `otp_codes` tables without dropping or truncating existing data, and adds `tasks.user_id` only if absent. Before the first deployment, inspect the existing database read-only:
+
+```sql
+SELECT table_name, column_name, data_type, is_nullable, column_default
+FROM information_schema.columns
+WHERE table_schema = current_schema()
+   AND table_name IN ('tasks', 'users', 'otp_codes')
+ORDER BY table_name, ordinal_position;
+```
+
+### Lambda Alternative
+
+If the backend runs on Lambda behind API Gateway, attach the Lambda to private subnets in the database VPC (or a routed peered VPC), use a Lambda security group allowed by the EC2 database security group on TCP `5432`, and load the connection secret from Secrets Manager. The Lambda execution role also needs permission to read that secret. Set a small `DATABASE_POOL_MAX_SIZE` (for example, `2`) because each warm Lambda execution environment owns its own pool; account for concurrency against the EC2 PostgreSQL connection limit. For higher concurrency, consider PgBouncer in the private VPC and cap Lambda concurrency. Do not expose PostgreSQL publicly to make Lambda connectivity work.
+
+For an application container running on the same EC2 instance, use the database's local/private address and port `5432`; `localhost` inside a container is the container itself unless host networking is explicitly configured.
 
 ---
 
