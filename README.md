@@ -1,117 +1,143 @@
 # 🎙️ VocaTask
 
-> **A voice-first, multilingual AI task manager built as an installable Progressive Web App (PWA) with a Python FastAPI backend.**
+VocaTask is a voice-first, multilingual task manager designed for fast capture on mobile and desktop. Users can speak naturally in English, Hindi, Punjabi, Hinglish, or other conversational languages, and the app turns that speech into a structured task with a title, due date, time, category, and priority.
 
-Speak naturally in **any language** (English, Hindi, Punjabi, Hinglish, Spanish, etc.), and the AI pipeline will transcribe, understand dates & times (*"kal shaam 6 baje"*, *"tomorrow at 10 AM"*, *"ਕੱਲ੍ਹ ਸ਼ਾਮ gym ਜਾਣਾ"*), and automatically create structured, prioritized tasks.
+It is built as a Progressive Web App (PWA) with a React + Vite frontend and a Python FastAPI backend. The goal is simple: turn spoken intent into a task that feels natural to review and save in under a minute.
+
+> VocaTask is a practical prototype for voice-driven productivity workflows, with a focus on multilingual natural language understanding and mobile-first UX.
+
+---
+
+## ✨ Why this project exists
+
+Most task apps still rely on manual typing. VocaTask aims to remove that friction by letting users say things like:
+
+- "Kal shaam 6 baje study ke liye chemistry ka revision karna"
+- "Tomorrow at 10 AM, finish the landing page mockup"
+- "Pay electricity bill by Friday evening"
+- "Gym at 7:00 PM, high priority"
+
+The app interprets the spoken input, normalizes dates and times, classifies the task, and shows a review step before saving.
 
 ---
 
-## 🌟 Key Features
+## 🌟 Core features
 
-* **📱 Universal Installable PWA:**
-  * **Android:** Native "Install App" browser prompt via Web App Manifest & Service Worker.
-  * **iOS (iPhone/iPad):** Zero-friction "Add to Home Screen" support (no App Store fees or Mac required).
-* **🎙️ Voice Capture in Any Language:**
-  * Real-time browser-native Web Speech API with soundwave visualizer & live transcription.
-  * Zero latency, zero cloud upload fees, and works natively across Chrome, Safari, and Edge.
-* **🧠 Context-Aware AI Task Extraction:**
-  * Automatically resolves relative dates (*"kal"*, *"parson"*, *"today"*, *"next Monday"*) based on user timezone.
-  * Resolves colloquial times (*"subah"* $\rightarrow$ 09:00, *"shaam"* $\rightarrow$ 18:00, *"raat"* $\rightarrow$ 21:00).
-  * Auto-tags category (*study, work, health, finance, personal*) and priority (*low, medium, high*).
-* **✅ Pre-Save AI Confirmation Sheet:**
-  * Clean review modal allowing users to edit the parsed title, pick dates, or adjust categories before saving.
-  * Celebratory confetti animation upon task creation.
-* **⚡ Durable PostgreSQL Storage:**
-  * Tasks and authentication records use PostgreSQL, with successful task responses cached in browser storage.
-  * Production task reads and writes require a reachable backend; browser cache is not a substitute for durable backend storage.
+### 1. Voice-first task creation
+- Browser-native microphone capture
+- Live speech transcription
+- Works in multilingual voice input
+- Fast review flow before saving
 
-* **🔐 Authentication UI:**
-  * Email registration and sign-in use PBKDF2-HMAC-SHA256 password hashing and signed HMAC-SHA256 JWTs.
-  * Google and Facebook buttons are present, but the current frontend submits placeholder credentials. Integrate real provider SDKs and token verification before production use.
-  * Phone OTP endpoints exist in the backend, but SMS delivery is simulated and the current auth screen does not offer phone sign-in.
-* **⚙️ Settings:** The dialog shows backend AI/provider status, read-only masked API-key prefixes, notification controls, and account details. Configure provider secrets in the backend environment, not in the frontend.
+### 2. Multilingual task interpretation
+- Handles relative dates like today, tomorrow, next Monday, next week
+- Understands colloquial time phrases like morning, evening, night
+- Infers categories such as work, study, health, finance, and personal
+- Suggests priority levels based on task context
 
-> **Security status:** Task endpoints do not currently require a valid JWT, and the optional `X-User-Id` header is caller-controlled. Do not treat task access as authenticated or user-isolated, or expose personal task data in production, until backend authorization and ownership checks are enforced.
+### 3. Mobile-friendly PWA experience
+- Installable on Android and iOS
+- App-like experience without a native app store build
+- Works across desktop, tablet, and phone browsers
+- Optimized for microphone access and quick task entry on the go
+
+### 4. AI-assisted confirmation flow
+- Users can review the parsed task in a confirmation sheet
+- Edit title, date, time, category, or priority before saving
+- Confetti feedback on successful task creation
+
+### 5. Backend data layer
+- FastAPI API for task and voice processing
+- PostgreSQL for persistent storage
+- Environment-based configuration for provider keys and database settings
+
+### 6. Security-conscious setup notes
+- Sensitive credentials are expected to live in backend environment variables, not in the frontend
+- The project includes warning notes around production authentication and user isolation as a realistic implementation constraint
 
 ---
+
 ## 🏗️ Architecture
 
 ```mermaid
 flowchart TD
-    subgraph Client ["Client Device (iOS / Android / Desktop)"]
-        UI["VocaTask PWA UI (React + Tailwind)"]
-        MIC["Browser Native Web Speech API"]
-        MODAL["AI Confirmation Sheet"]
+    subgraph Client[Client Device]
+        UI[React + Vite PWA UI]
+        MIC[Browser Microphone + Speech Input]
+        REVIEW[Task Review / Confirm Modal]
     end
 
-    subgraph Backend ["FastAPI Server (Python)"]
-        API["POST /api/voice/process-text"]
-        LLM["AI Parser & Multilingual Date Normalizer"]
-        DB[(PostgreSQL Persistent Storage)]
+    subgraph Backend[FastAPI Backend]
+        API[Voice Processing API]
+        PARSER[Multilingual Task Parser]
+        DB[(PostgreSQL)]
     end
 
-    MIC -->|Live Transcribed Text| API
-    API --> LLM
-    LLM -->|Structured Task JSON| MODAL
-    MODAL -->|Confirm & Save| DB
-* **🔐 Authentication UI:**
+    MIC -->|Audio / transcript| API
+    API --> PARSER
+    PARSER -->|Structured task JSON| REVIEW
+    REVIEW -->|Save task| DB
 ```
 
 ---
 
-## 🚀 Quick Start (Running Locally)
+## 🧩 Tech stack
 
-### Prerequisites
+### Frontend
+- React 19
+- Vite
+- TypeScript
+- Tailwind CSS
+- PWA support via Vite plugin
+- Canvas confetti for task success feedback
 
-* **Node.js** (`^20.19.0` or `>=22.12.0`, required by Vite 8)
+### Backend
+- Python
+- FastAPI
+- PostgreSQL
+- Pydantic for schema validation
+- Provider integrations for AI services (Gemini, OpenAI, Groq, etc.)
 
 ---
 
-### 2. Backend Setup (FastAPI)
+## 🚀 Local development
+
+### Prerequisites
+- Node.js 20.19+ or 22.12+
+- Python 3.10+
+- PostgreSQL for local database use (or a tunnel to a remote DB)
+
+### 1. Backend setup
 
 ```bash
-# Navigate to backend
 cd backend
-
-# Create virtual environment (if not already created)
 python -m venv venv
 
-# Activate virtual environment
-# Windows (PowerShell):
+# Windows PowerShell
 .\venv\Scripts\Activate.ps1
-# Mac/Linux:
+
+# macOS / Linux
 source venv/bin/activate
 
-# Install dependencies
 pip install -r requirements.txt
 ```
 
-#### 🔐 Environment Variables & Team Collaboration (GitHub)
-
+Create a local environment file:
 
 ```bash
-# Copy the example template into backend/.env
-# Windows:
 copy .env.example .env
-# Mac / Linux:
+# or
 cp .env.example .env
 ```
-Open `backend/.env` and add any provider keys and PostgreSQL settings you want to use:
+
+Example configuration:
 
 ```env
-# Google Gemini (Recommended - free tier via Google AI Studio)
 GEMINI_API_KEY=your_gemini_api_key_here
-
-# ElevenLabs (for Speech-to-Text Scribe STT - use the secret key starting with sk_)
+OPENAI_API_KEY=your_openai_api_key_here
+GROQ_API_KEY=your_groq_api_key_here
 ELEVEN_LAB_API_KEY=sk_your_elevenlabs_secret_key_here
 
-# Groq (Alternative for ultra-fast Llama-3.3 / Whisper)
-GROQ_API_KEY=your_groq_api_key_here
-
-# OpenAI (Alternative for GPT-4o-mini / Whisper)
-OPENAI_API_KEY=your_openai_api_key_here
-
-# PostgreSQL through the SSH tunnel below
 PGHOST=localhost
 PGPORT=5433
 PGDATABASE=vocatask
@@ -120,184 +146,145 @@ PGPASSWORD=your_database_password
 JWT_SECRET_KEY=replace-with-a-long-random-secret
 ```
 
-**Security note:** `backend/.env` is ignored by Git and must never be committed. Use your own provider keys or share them only through an approved secret manager, never through GitHub, chat, or a committed file.
+Important:
+- `backend/.env` is local-only and should never be committed
+- Store real secrets in a secure environment manager or host secret store
+- The backend checks env configuration in order from a custom path, local `.env`, repo root `.env`, user-level config, and system env vars
 
-`backend/.env.example` is a template only. Put real provider credentials in `backend/.env` locally or in the backend host's secret/environment-variable settings. Never put provider keys in `VITE_*` variables or frontend source. The Settings dialog only shows provider configuration status and masked prefixes; it does not expose full backend secrets.
-
-The backend looks for environment configuration in this order:
-
-1. Custom path in `VOICETASKS_ENV_FILE`, if set
-2. `backend/.env`
-3. Repository-root `.env`
-4. `~/.voicetasks.env` (for example, `C:\Users\<username>\.voicetasks.env`)
-5. Operating system or container environment variables
-
-#### PostgreSQL and Local SSH Tunnel
-
-The backend accepts either `DATABASE_URL` or the `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD` variables. For local development, keep PostgreSQL private on EC2 and open this SSH tunnel in a separate terminal:
-
-```powershell
-ssh -i <path-to-key.pem> -N -L 5433:127.0.0.1:5432 <ec2-user>@<ec2-public-dns>
-```
-
-Set the values above in `backend/.env`; `PGPASSWORD` must be the database password and must not be committed. Install dependencies with `pip install -r requirements.txt`, then start the backend from `backend` with `python run.py`. The API is at `http://127.0.0.1:8000`.
-
-Verify the configured connection without printing credentials:
-
-```powershell
-python -c "from app.core.database import get_db_connection; c=get_db_connection(); conn=c.__enter__(); print(conn.execute('SELECT current_database(), current_user').fetchone()); c.__exit__(None, None, None)"
-```
-
-Startup creates missing tables without replacing existing ones and adds nullable `user_id` only if it is absent. It does not insert sample rows. Inspect the target schema through `information_schema.columns` before the first deployment. API integration tests require a separate `TEST_DATABASE_URL` whose database name ends in `_test`; without it, those tests are skipped. Unit tests use mocks and never modify PostgreSQL.
-
-#### API configuration and limits
-
-The backend uses these defaults; override them in the backend environment when needed:
-
-| Variable | Default | Purpose |
-| -------- | ------: | ------- |
-| `CORS_ORIGINS` | Local development origins | Exact JSON array of allowed browser origins |
-| `API_RATE_LIMIT_PER_MINUTE` | `120` | General API requests per IP per minute |
-| `VOICE_RATE_LIMIT_PER_MINUTE` | `20` | Voice API requests per IP per minute |
-| `AUDIO_RATE_LIMIT_PER_MINUTE` | `5` | Audio transcription requests per IP per minute |
-| `MAX_AUDIO_UPLOAD_BYTES` | `15728640` | Maximum uploaded audio size (15 MiB) |
-
-The in-process limits are per backend instance and are not authentication. Add gateway/WAF throttling for a shared deployment-wide limit. Although email authentication endpoints and JWTs exist, task endpoints do not require authentication and must not be considered protected or user-isolated yet.
+Start the backend:
 
 ```bash
-# Start the FastAPI server
 python run.py
 ```
 
-* Backend will be running at: `http://127.0.0.1:8000`
-* Interactive API Docs (Swagger): `http://127.0.0.1:8000/docs`
+The API will be available at:
+- http://127.0.0.1:8000
+- Swagger docs: http://127.0.0.1:8000/docs
 
-> **Note:** Even without any API keys, the server runs a built-in **Intelligent Multilingual Heuristic Parser** that understands Hindi, Hinglish, Punjabi, and English dates and categories!
-
----
-
-### 3. Frontend Setup (React PWA)
+### 2. Frontend setup
 
 ```bash
-# In a new terminal, navigate to frontend
 cd frontend
-
-# Install locked dependencies
 npm ci
-
-# Option A: Start Vite for Laptop/Desktop browser
 npm run dev
-# (Accessible at http://localhost:5173)
-
-# Option B: Start Vite with HTTPS for Mobile (Android / iOS / Phone) Testing
-npm run dev:https
-# (Accessible at https://<your-lan-ip>:5173 - enables microphone permissions on Android and iOS!)
 ```
+
+For mobile testing with microphone permissions, you can run HTTPS mode:
+
+```bash
+npm run dev:https
+```
+
+This is especially useful on Android/iPhone when browser permission prompts require a secure origin.
 
 ---
 
-### 🧪 Running Tests
+## 📱 Install as an app
 
-#### Backend Test Suite
+### Android
+1. Open the app in Chrome
+2. Tap the install banner
+3. Add it to the home screen or app drawer
+
+### iPhone / iPad
+1. Open the app in Safari
+2. Tap the Share button
+3. Select Add to Home Screen
+4. Launch it like a native app
+
+---
+
+## 🧪 Testing
+
+### Backend
 
 ```bash
 cd backend
-# Windows:
-.\venv\Scripts\python.exe -m unittest discover -s tests -v
-# Mac/Linux:
 python -m unittest discover -s tests -v
 ```
 
-Task/auth API integration tests are skipped unless `TEST_DATABASE_URL` points to a separate database ending in `_test`.
-
-#### Frontend Linter & Build Verification
+### Frontend
 
 ```bash
 cd frontend
-npm ci
 npm test
 ```
 
-Some voice/API tests call the configured external AI provider. When provider keys are set, these tests need network access and can take longer than the frontend checks.
+The repo is designed to support automated validation, but external AI provider calls may require network access and valid credentials for some test paths.
 
 ---
 
-## 📲 How to Install as an App on Mobile
+## ☁️ Deployment notes
 
-### On Android
+The project is structured for cloud deployment, with examples for AWS App Runner and containerized deployment. Typical deployment flow includes:
 
-1. Open Chrome and go to your app URL (or local network IP e.g. `http://192.168.x.x:5173`).
+- Deploy the backend service to a secure host
+- Set provider keys and database env vars in the backend environment
+- Configure CORS to allow only trusted frontend origins
+- Set `VITE_API_URL` for the frontend to connect to the deployed backend
+- Use HTTPS in production, especially when microphone access is enabled
 
-2. An **"Install VocaTask App"** banner will automatically appear at the bottom.
-3. Tap **Install** $\rightarrow$ VocaTask will appear directly on your home screen and app drawer just like a native app.
-### On iOS (iPhone / iPad)
-
-1. Open Safari and navigate to your app URL.
-2. Tap the **Share icon** (`⬆`) at the bottom navigation bar.
-3. Scroll down and tap **"Add to Home Screen"** (`➕`).
-4. Tap **Add** $\rightarrow$ VocaTask will open in fullscreen mode without Safari URL bars.
-
----
-
-## ☁️ Production Setup
-
-### AWS Amplify + App Runner
-
-1. Deploy the FastAPI service from the `backend` directory using `backend/apprunner.yaml`, or configure App Runner with build command `pip install -r requirements.txt`, start command `uvicorn app.main:app --host 0.0.0.0 --port 8000`, and port `8000`.
-1. In the App Runner environment, add only the provider keys you intend to use (`GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENAI_API_KEY`, and/or `ELEVEN_LAB_API_KEY`). Set `DEFAULT_TIMEZONE=Asia/Kolkata`. Set `CORS_ORIGINS` to a JSON array containing the exact frontend origin, such as `["https://main.example.amplifyapp.com"]`; do not use `*` in production.
-1. The backend defaults to `API_RATE_LIMIT_PER_MINUTE=120`, `VOICE_RATE_LIMIT_PER_MINUTE=20`, and `AUDIO_RATE_LIMIT_PER_MINUTE=5`. Configure API Gateway/WAF throttling too if traffic passes through those services; in-process limits are per instance.
-1. In AWS Amplify, connect the repository and use the root `amplify.yml`. Set `VITE_API_URL` to the backend HTTPS base URL with no trailing slash. For example, use `https://api.example.com`, not a URL ending in `/api`; the frontend adds `/api` automatically. For API Gateway, include a named stage in the base URL, such as `https://<api-id>.execute-api.<region>.amazonaws.com/<stage>`.
-1. Redeploy the frontend after setting `VITE_API_URL`. Set backend `CORS_ORIGINS` to the exact Amplify or CloudFront origin, including `https://` and excluding any path.
-1. Verify `GET <backend-url>/health`, `GET <backend-url>/api/voice/status`, and voice/task requests in the browser Network tab. A `404` usually means an API route or gateway stage is missing/not deployed; a CORS error means the origin or gateway CORS configuration does not match.
-
-If deploying the backend behind API Gateway and Lambda, configure a Lambda proxy integration for the root and `/{proxy+}` routes, deploy the stage, and allow the required methods and headers at the gateway. A developer SSH tunnel is not available to AWS workloads; the backend must use private VPC connectivity to the EC2 PostgreSQL host. See [AWS_DEPLOYMENT.md](AWS_DEPLOYMENT.md) for network and security-group steps.
 ### Docker Compose
 
-From the repository root, optionally create a root `.env` file for backend provider keys (do not commit it), then run:
+From the repo root:
 
 ```bash
 docker compose up --build
 ```
 
-Open `http://localhost`. The frontend container uses the same-origin `/api` path and Nginx proxies it to the backend container. The API is also available directly at `http://localhost:8000`. Docker Compose expects `PGPASSWORD` or `DATABASE_URL` in the repository-root `.env`; its default host is `host.docker.internal` because the SSH tunnel runs on the host.
+This can run the app with frontend and backend services together, using the same-origin `/api` proxy pattern for the web app.
 
-### Production Security Checklist
-
-* Keep provider credentials in the backend host's secret store/environment variables; never put them in frontend build variables or source.
-* Configure exact CORS origins and gateway-level rate limits. CORS does not prevent direct API clients from calling a public endpoint.
-* Before using real personal data, require verified authentication on every task operation and enforce ownership using the authenticated identity. Do not trust a caller-supplied `X-User-Id` header.
-* Replace the placeholder Google/Facebook flows with real provider SDK tokens and verification. Replace the simulated phone OTP flow with a real SMS provider before production use.
-* Keep PostgreSQL private and reachable only from trusted backend security groups or through the SSH tunnel used by local developers.
-* HTTPS is required for browser microphone access.
 ---
 
-## 📂 Project Structure
+## 🔐 Security and production realism
+
+This project includes important production safety notes and should not be treated as a fully hardened authentication system yet. In particular:
+
+- Task endpoints should not be trusted without verified authentication
+- Caller-controlled headers like `X-User-Id` must not be used as a source of truth for ownership
+- Provider secrets must stay server-side only
+- Real OAuth / SMS flows should replace placeholders before production release
+- PostgreSQL should remain private and isolated behind trusted network controls
+
+This is a realistic prototype architecture, with known limitations explicitly documented in the codebase and setup instructions.
+
+---
+
+## 📁 Project structure
 
 ```text
-react js learning/
+VocaTask/
 ├── backend/
 │   ├── app/
-│   │   ├── api/             # Voice & Tasks endpoints
-│   │   ├── core/            # Config, middleware, and environment settings
-│   │   ├── schemas/         # Pydantic validation models
-│   │   ├── services/        # STT, AI LLM Parser, Task Store
-│   │   └── main.py          # FastAPI app entrypoint
-│   ├── run.py               # Local server runner
-│   ├── requirements.txt     # Python dependencies
-│   ├── .env.example         # Environment variables template (Committed)
-│   └── .env                 # Local secrets file (Gitignored)
+│   │   ├── api/
+│   │   ├── core/
+│   │   ├── schemas/
+│   │   ├── services/
+│   │   └── main.py
+│   ├── run.py
+│   ├── requirements.txt
+│   ├── .env.example
+│   └── .env
 ├── frontend/
 │   ├── public/
-│   │   ├── favicon.svg      # App icon
-│   │   └── icons/           # PWA 192x192 and 512x512 icons
 │   ├── src/
-│   │   ├── components/      # VoiceRecorder, TaskConfirmModal, TaskList, etc.
-│   │   ├── services/        # API client & local cache
-│   │   ├── types/           # TypeScript interfaces
-│   │   ├── App.tsx          # Root UI layout
-│   │   └── index.css        # Tailwind styling & animations
-│   ├── vite.config.ts       # Vite configuration with PWA plugin
-* Before using real personal data, require verified authentication on every task operation and enforce ownership using the authenticated identity. Do not trust a caller-supplied `X-User-Id` header.
-* Replace the placeholder Google/Facebook flows with real provider SDK tokens and verification. Replace the simulated phone OTP flow with a real SMS provider before production use.
-└── README.md
+│   ├── package.json
+│   ├── vite.config.ts
+│   └── index.html
+├── docker-compose.yml
+├── amplify.yml
+├── README.md
+└── .gitignore
 ```
+
+---
+
+## 📌 Summary
+
+VocaTask is a practical proof-of-concept for spoken task management in multilingual settings. It combines browser speech input, AI-powered interpretation, and a lightweight workflow for task confirmation and persistence, making it a strong base for real-world productivity apps built around voice capture.
+
+If you want, I can also help you with:
+- a more premium GitHub-style README with badges and screenshots
+- a shorter recruiter-friendly version
+- a version optimized for open-source presentation
+- a README tailored for Hackathon / portfolio use
