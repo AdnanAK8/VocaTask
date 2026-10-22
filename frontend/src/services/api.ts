@@ -1,5 +1,5 @@
 import type { CategoryType, ExtractedTask, PriorityType, Task, TaskCreateInput, TaskUpdateInput } from '../types/task';
-
+import type { ChatHistoryItem } from '../types/chat';
 const configuredApiUrl = import.meta.env.VITE_API_URL?.trim().replace(/\/+$/, '');
 const API_BASE = configuredApiUrl
   ? (configuredApiUrl.endsWith('/api') ? configuredApiUrl : `${configuredApiUrl}/api`)
@@ -56,7 +56,7 @@ const getCustomKeyHeaders = (): Record<string, string> => {
     try {
       const u = JSON.parse(userJson);
       if (u?.id) headers['X-User-Id'] = u.id;
-    } catch {}
+    } catch { }
   }
 
   return headers;
@@ -927,6 +927,24 @@ export const api = {
     }
   },
 
+  /**
+ * Sends a chat message with optional files/screenshots to the backend chat endpoint.
+ */
+  async sendChatMessage(text: string, files: File[], history: ChatHistoryItem[]): Promise<string> {
+    const url = getApiUrl('/chat');
+    if (!url) throw new Error('Backend URL is not configured');
+    const formData = new FormData();
+    formData.append('message', text);
+    formData.append('history', JSON.stringify(history));
+    files.forEach((file) => formData.append('files', file, file.name));
+
+    // No Content-Type here: the browser must set the multipart boundary itself.
+    const response = await fetch(url, { method: 'POST', headers: getCustomKeyHeaders(), body: formData });
+    if (!response.ok) throw await responseError(response, 'Chat');
+    const data: { reply?: string } = await response.json();
+    if (!data.reply) throw new Error('Backend returned an empty reply.');
+    return data.reply;
+  },
   /**
    * Fetches backend AI and voice service status.
    */
