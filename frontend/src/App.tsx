@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import './App.css';
-import { Check, ChevronRight, Clock3, Pencil, Plus, Settings, Trash2, X, Mic, Download, Bell, BellOff } from 'lucide-react';
+import { Check, ChevronRight, Clock3, Pencil, Plus, Settings, Trash2, X, Mic, Download, Bell, BellOff, Sparkles } from 'lucide-react';
+import { FrontFixDrawer } from './components/FrontFixDrawer';
 import { VoiceRecorder } from './components/VoiceRecorder';
 import { TaskConfirmModal } from './components/TaskConfirmModal';
 import { InstallPwaBanner } from './components/InstallPwaBanner';
@@ -63,6 +64,7 @@ export const App = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [extractedTask, setExtractedTask] = useState<ExtractedTask | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isFrontFixOpen, setIsFrontFixOpen] = useState(false);
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const [isTaskFormOpen, setIsTaskFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -299,6 +301,17 @@ export const App = () => {
 
   return (
     <div className="app-shell">
+      {/* Option on the left: Pop up FrontFix Chatbot from left side */}
+      <button
+        className="frontfix-left-dock-btn"
+        onClick={() => setIsFrontFixOpen(true)}
+        aria-label="Open FrontFix AI Chatbot from left"
+        title="Open FrontFix AI Diagnostic Chatbot (Pops up from left)"
+      >
+        <span className="frontfix-dock-icon">⚡</span>
+        <span className="frontfix-dock-text">FrontFix AI</span>
+        <span className="frontfix-dock-badge">CHAT</span>
+      </button>
       <header className="header">
         <div className="brand">
           <a href="#tasks" className="brand-logo-link" aria-label="VocaTask home" style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
@@ -313,6 +326,15 @@ export const App = () => {
             </a>
           </span>
         </div>
+        <button
+          className="header-frontfix-btn"
+          onClick={() => setIsFrontFixOpen(true)}
+          aria-label="Open FrontFix AI Chatbot"
+          title="Open FrontFix AI Diagnostic Chatbot from left"
+        >
+          <Sparkles size={15} />
+          <span>FrontFix AI</span>
+        </button>
         <div className="header-actions">
           <button
             className="icon-button header-notifications"
@@ -434,6 +456,7 @@ export const App = () => {
       <nav className="bottom-nav" aria-label="Main navigation">
         <a className="nav-item active" href="#tasks"><Check size={18} />Tasks</a>
         <button className="nav-add" onClick={() => setIsVoiceOpen(true)} aria-label="Add a task by voice" title="Add by voice"><Mic size={21} /></button>
+        <button className="nav-item" onClick={() => setIsFrontFixOpen(true)} aria-label="Open FrontFix AI Chatbot" title="FrontFix Chatbot"><Sparkles size={18} /><span>Chatbot</span></button>
         <button className="nav-item" onClick={() => setIsSettingsOpen(true)}><Settings size={18} />Settings</button>
       </nav>
 
@@ -508,7 +531,11 @@ export const App = () => {
       />
 
       <InstallPwaBanner />
-      <ChatWidget/>
+
+      <FrontFixDrawer
+        isOpen={isFrontFixOpen}
+        onClose={() => setIsFrontFixOpen(false)}
+      />
     </div>
   );
 };

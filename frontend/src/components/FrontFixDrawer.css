@@ -1,0 +1,160 @@
+/* =========================================================
+   FRONTFIX LEFT POP-UP DRAWER
+   Smooth left slide-in panel with backdrop
+   ========================================================= */
+
+.frontfix-drawer-container {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  pointer-events: auto;
+}
+
+.frontfix-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(18, 26, 22, 0.45);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  opacity: 1;
+  animation: frontfixFadeIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  z-index: 1;
+}
+
+.frontfix-drawer-panel {
+  position: relative;
+  z-index: 2;
+  width: clamp(460px, 48vw, 780px);
+  max-width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  background: #ffffff;
+  box-shadow: 16px 0 45px rgba(23, 35, 29, 0.22);
+  border-right: 1px solid #dce5ee;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: frontfixSlideInLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes frontfixFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes frontfixSlideInLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* Left floating launch tab on desktop & tablet */
+.frontfix-left-dock-btn {
+  position: fixed;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 850;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #2d6b54 0%, #1e523f 100%);
+  color: #ffffff;
+  padding: 10px 14px 10px 10px;
+  border-top-right-radius: 12px;
+  border-bottom-right-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-left: none;
+  box-shadow: 0 4px 18px rgba(32, 86, 64, 0.28);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.frontfix-left-dock-btn:hover {
+  background: linear-gradient(135deg, #378065 0%, #23634c 100%);
+  padding-left: 14px;
+  padding-right: 18px;
+  box-shadow: 0 6px 24px rgba(32, 86, 64, 0.4);
+  transform: translateY(-50%) translateX(2px);
+}
+
+.frontfix-dock-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+.frontfix-dock-text {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.frontfix-dock-badge {
+  background: #a3e635;
+  color: #143820;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Header button on the left */
+.header-frontfix-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: #edf5ef;
+  color: #236553;
+  border: 1px solid #d4e7db;
+  padding: 6px 13px;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  margin-left: 14px;
+}
+
+.header-frontfix-btn:hover {
+  background: #e1efe6;
+  border-color: #badcc6;
+  color: #1a4f40;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(35, 101, 83, 0.12);
+}
+
+@media (max-width: 640px) {
+  .frontfix-drawer-panel {
+    width: 100vw;
+  }
+  .frontfix-left-dock-btn {
+    display: none;
+  }
+  .header-frontfix-btn span {
+    display: none;
+  }
+  .header-frontfix-btn {
+    padding: 6px 8px;
+    margin-left: 6px;
+  }
+}

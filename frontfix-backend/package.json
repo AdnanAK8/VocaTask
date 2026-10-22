@@ -1,0 +1,23 @@
+{
+  "name": "frontfix-ai-backend",
+  "version": "3.0.0",
+  "description": "FrontFix AI — Python/FastAPI Diagnostic Backend (Team B: Frontend Support)",
+  "type": "module",
+  "scripts": {
+    "start": "python main.py",
+    "dev": "python main.py",
+    "test": "pytest tests -v"
+  },
+  "keywords": [
+    "frontfix",
+    "frontend",
+    "ai",
+    "troubleshooting",
+    "diagnostics",
+    "fastapi",
+    "python",
+    "gemini"
+  ],
+  "author": "FrontFix Team B",
+  "license": "MIT"
+}
