@@ -16,7 +16,6 @@ import { AuthGateDesign as AuthGate } from './components/AuthGateDesign';
 import { UserProfileMenu } from './components/UserProfileMenu';
 import { authService } from './services/authService';
 import type { User } from './types/auth';
-import { ChatWidget } from './components/ChatWidget';
 
 interface TaskFormValues {
   title: string;
