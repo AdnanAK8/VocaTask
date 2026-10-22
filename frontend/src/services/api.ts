@@ -778,7 +778,7 @@ export const api = {
     try {
       const tasksUrl = getApiUrl('/tasks');
       if (!tasksUrl) throw new Error('Backend URL is not configured');
-      const res = await fetch(tasksUrl);
+      const res = await fetch(tasksUrl, { headers: getCustomKeyHeaders() });
       const contentType = res.headers.get('content-type') || '';
       if (!res.ok) throw await responseError(res, 'Loading tasks');
       if (!contentType.includes('application/json')) throw new Error('Backend returned an unexpected response while loading tasks.');
@@ -803,7 +803,7 @@ export const api = {
       if (!tasksUrl) throw new Error('Backend URL is not configured');
       const res = await fetch(tasksUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getCustomKeyHeaders() },
         body: JSON.stringify(taskData),
       });
 
@@ -881,9 +881,7 @@ export const api = {
     try {
       const url = getApiUrl(`/tasks/${id}/toggle`);
       if (!url) throw new Error('Backend URL is not configured');
-      const res = await fetch(url, {
-        method: 'PATCH',
-      });
+      const res = await fetch(url, { method: 'PATCH', headers: getCustomKeyHeaders() });
       const contentType = res.headers.get('content-type') || '';
       if (!res.ok) throw await responseError(res, 'Updating task status');
       if (!contentType.includes('application/json')) throw new Error('Backend returned an unexpected response while updating task status.');
@@ -913,7 +911,7 @@ export const api = {
     try {
       const url = getApiUrl(`/tasks/${id}`);
       if (!url) throw new Error('Backend URL is not configured');
-      const response = await fetch(url, { method: 'DELETE' });
+      const response = await fetch(url, { method: 'DELETE', headers: getCustomKeyHeaders() });
       if (!response.ok) throw await responseError(response, 'Deleting task');
     } catch (e) {
       if (!isDevelopment) throw e;

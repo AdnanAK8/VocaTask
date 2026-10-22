@@ -89,7 +89,7 @@ def get_connection_pool() -> ConnectionPool:
         ensure_tunnel_if_needed()
         _pool = ConnectionPool(
             conninfo=settings.database_connection_string,
-            min_size=0,
+            min_size=1,  # ponytail: keep 1 warm connection
             max_size=settings.DATABASE_POOL_MAX_SIZE,
             timeout=settings.DATABASE_POOL_TIMEOUT,
             kwargs={"connect_timeout": 5, "row_factory": dict_row},
