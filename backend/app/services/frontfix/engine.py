@@ -54,6 +54,39 @@ class DiagnosticEngine:
         "502 bad gateway",
         "bad gateway",
         "proxy error",
+        "website not working",
+        "website down",
+        "site not working",
+        "javascript or react error",
+        "react error",
+        "javascript error",
+        "api or backend problem",
+        "api problem",
+        "backend problem",
+        "styling or ui issue",
+        "styling issue",
+        "ui issue",
+        "build or deployment failure",
+        "build failure",
+        "deployment failure",
+        "database or connection issue",
+        "database issue",
+        "connection issue",
+        "something else",
+        "i don't know how to check",
+        "dont know how to check",
+        "the website shows a blank screen",
+        "the website is loading very slowly",
+        "i see an error message",
+        "some buttons or features are not working",
+        "the website is completely unavailable",
+        "immediately when i open the website",
+        "after logging in",
+        "after clicking a button",
+        "after refreshing the page",
+        "it happens randomly",
+        "yes, i see an error",
+        "no errors are visible",
     }
 
     def __init__(self, options: dict | None = None):
@@ -290,8 +323,126 @@ class DiagnosticEngine:
                     "Paste full stack trace",
                 ],
                 "can_skip": True,
-                "verification_actions": ["verify_solved", "verify_broken"],
+                "verification_actions": ["verify_solved", "verify_broken", "verify_partial", "verify_different_error", "verify_need_help"],
                 "confirmation_prompt": "Please share what happened after applying the fix.",
+                "redactions_count": redactions_count,
+            }
+
+        # ---------------------------------------------------------
+        # Handle Action: verify_partial (Fix worked partially)
+        # ---------------------------------------------------------
+        if action == "verify_partial":
+            case.resolution_status = "partial"
+            return {
+                "matched": False,
+                "generated_by": "state_machine",
+                "model_label": "🔬 Partial Fix Troubleshooting",
+                "state": DiagnosticState.COLLECT_CONTEXT.value,
+                "case_summary": case.to_dict(),
+                "language": active_lang,
+                "is_followup_needed": True,
+                "is_uncertain": True,
+                "confidence_score": 0.7,
+                "confidence_level": "investigating",
+                "category": "Partial Resolution",
+                "title": "Troubleshooting Partial Fix",
+                "problem": f"The previous fix resolved part of '{case.problem_statement}', but secondary symptoms persist.",
+                "likely_cause": "The primary error is fixed, but a dependent state update, secondary component lifecycle, or subsequent API request is failing.",
+                "fix_steps": [
+                    "1. Note what is working now (e.g. page renders, no longer white screen).",
+                    "2. Check console (F12) for any new warning or network error.",
+                    "3. Select the symptom below to isolate the remaining issue.",
+                ],
+                "extra_tips": "Partial fixes are common when a component depends on multiple asynchronous states.",
+                "follow_up_prompt": "Which part of the problem is still occurring?",
+                "follow_up_question": "Which part of the problem is still occurring?",
+                "interactive_options": [
+                    "The page loads now, but buttons/clicks do not work",
+                    "The original error is gone, but UI is frozen/blank",
+                    "Data is fetching, but not displaying properly in the component",
+                    "I see a new error in the browser console",
+                ],
+                "can_skip": True,
+                "verification_actions": [],
+                "confirmation_prompt": "Please select what remains broken to continue.",
+                "redactions_count": redactions_count,
+            }
+
+        # ---------------------------------------------------------
+        # Handle Action: verify_different_error (New error appeared)
+        # ---------------------------------------------------------
+        if action == "verify_different_error":
+            case.resolution_status = "investigating"
+            return {
+                "matched": False,
+                "generated_by": "state_machine",
+                "model_label": "🔬 Secondary Error Investigation",
+                "state": DiagnosticState.COLLECT_CONTEXT.value,
+                "case_summary": case.to_dict(),
+                "language": active_lang,
+                "is_followup_needed": True,
+                "is_uncertain": True,
+                "confidence_score": 0.6,
+                "confidence_level": "investigating",
+                "category": "New Error Encountered",
+                "title": "Diagnosing New Secondary Error",
+                "problem": "A different error appeared after applying the previous code fix.",
+                "likely_cause": "Fixing the first barrier allowed execution to reach a subsequent unhandled condition in your application.",
+                "fix_steps": [
+                    "1. Copy the exact new error text or red trace from F12 Console.",
+                    "2. Paste the new error message into the chat below.",
+                ],
+                "extra_tips": "Encountering a new error is normal progress — it means the previous crash was resolved!",
+                "follow_up_prompt": "Please paste the new error message or select the symptom:",
+                "follow_up_question": "Please paste the new error message or select the symptom:",
+                "interactive_options": [
+                    "I have a new red error message (I will paste it below)",
+                    "Page became completely blank after the change",
+                    "Console shows a 404 or 500 network error",
+                ],
+                "can_skip": True,
+                "verification_actions": [],
+                "confirmation_prompt": "Share the new error to continue.",
+                "redactions_count": redactions_count,
+            }
+
+        # ---------------------------------------------------------
+        # Handle Action: verify_need_help (Beginner-friendly help)
+        # ---------------------------------------------------------
+        if action == "verify_need_help":
+            return {
+                "matched": True,
+                "generated_by": "state_machine",
+                "model_label": "📘 Beginner Implementation Guide",
+                "state": DiagnosticState.COLLECT_CONTEXT.value,
+                "case_summary": case.to_dict(),
+                "language": active_lang,
+                "is_followup_needed": True,
+                "is_uncertain": False,
+                "confidence_score": 0.9,
+                "confidence_level": "guidance",
+                "category": "Code Application Help",
+                "title": "Beginner Guide: Applying the Proposed Fix",
+                "problem": "Need assistance locating files, adding imports, or applying the code change safely.",
+                "likely_cause": "Applying code diffs can be tricky when adapting component names or file structures.",
+                "fix_steps": [
+                    "1. Locate the file mentioned in your error stack trace (e.g. src/components/...).",
+                    "2. Make a backup copy or ensure your git working tree is committed.",
+                    "3. Replace the lines marked in red (❌) with the green (✅) guarded block.",
+                    "4. Save the file and watch the Vite dev server auto-reload.",
+                ],
+                "extra_tips": "You can also paste your component snippet into the chat, and I will show you where to place the fix.",
+                "follow_up_prompt": "Where are you having trouble applying the fix?",
+                "follow_up_question": "Where are you having trouble applying the fix?",
+                "interactive_options": [
+                    "I don't know which file to put this code in",
+                    "I don't know where to import the hook/component",
+                    "I get a syntax error after pasting the code",
+                    "Show me an even simpler breakdown",
+                ],
+                "can_skip": True,
+                "verification_actions": ["verify_solved", "verify_broken"],
+                "confirmation_prompt": "Need more help with this step?",
                 "redactions_count": redactions_count,
             }
 
@@ -305,6 +456,9 @@ class DiagnosticEngine:
             facet = interactive_q.get("facet")
             question_text = interactive_q.get("question") or followup_data.get("follow_up_prompt", "")
 
+            step_num = min(case.step_number, 3)
+            step_label = f"Step {step_num} of 3"
+
             return {
                 "matched": False,
                 "generated_by": "knowledge_base",
@@ -314,6 +468,8 @@ class DiagnosticEngine:
                 "language": active_lang,
                 "is_followup_needed": True,
                 "is_uncertain": True,
+                "step_number": step_num,
+                "step_label": step_label,
                 "category": followup_data["category"],
                 "title": followup_data["title"],
                 "problem": followup_data["problem"],
@@ -467,7 +623,7 @@ class DiagnosticEngine:
                 "follow_up_question": follow_up_question,
                 "interactive_options": [],
                 "can_skip": False,
-                "verification_actions": ["verify_solved", "verify_broken"],
+                "verification_actions": ["verify_solved", "verify_broken", "verify_partial", "verify_different_error", "verify_need_help"],
                 "prevention_checklist": top_item.get("prevention_checklist", [
                     "Always check browser console (F12) for uncaught exceptions.",
                     "Verify component props and default states.",
@@ -541,7 +697,7 @@ class DiagnosticEngine:
                         "follow_up_question": None,
                         "interactive_options": [],
                         "can_skip": False,
-                        "verification_actions": ["verify_solved", "verify_broken"],
+                        "verification_actions": ["verify_solved", "verify_broken", "verify_partial", "verify_different_error", "verify_need_help"],
                         "prevention_checklist": llm_diag.get("prevention_checklist", [
                             "Always catch async promises with try/catch.",
                             "Use React ErrorBoundary around critical component subtrees.",
@@ -601,7 +757,7 @@ class DiagnosticEngine:
                 "I see a 404 / 500 network error",
             ],
             "can_skip": False,
-            "verification_actions": ["verify_solved", "verify_broken"],
+            "verification_actions": ["verify_solved", "verify_broken", "verify_partial", "verify_different_error", "verify_need_help"],
             "prevention_checklist": [
                 "Catch all async promises with try/catch.",
                 "Add top-level React ErrorBoundaries to prevent white screens.",

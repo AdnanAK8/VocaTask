@@ -134,10 +134,13 @@ export default function FrontFixApp({ onClose, isDrawer = false, initialError = 
                 onSelectOption={chat.selectOption}
                 onSkipQuestions={chat.skipQuestions}
                 onVerifySolution={chat.verifySolution}
+                onGoBack={chat.goBack}
+                onRestart={chat.restartDiagnosis}
               />
             ) : (
               <HeroView
                 onPreset={chat.sendPreset}
+                onSelectCategory={chat.send}
                 activeError={activeError}
                 onDiagnoseError={handleDiagnoseError}
                 onDismissError={handleDismissError}

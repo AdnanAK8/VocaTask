@@ -36,6 +36,8 @@ export default function BotMessage({
   onSelectOption,
   onSkipQuestions,
   onVerifySolution,
+  onGoBack,
+  onRestart,
 }) {
   if (data.conversational) {
     return (
@@ -47,9 +49,12 @@ export default function BotMessage({
           {Array.isArray(data.interactive_options) && data.interactive_options.length > 0 && (
             <InteractiveOptions
               options={data.interactive_options}
+              stepLabel={data.step_label}
               canSkip={data.can_skip ?? true}
               onSelectOption={onSelectOption}
               onSkip={onSkipQuestions}
+              onGoBack={onGoBack}
+              onRestart={onRestart}
             />
           )}
           {Array.isArray(data.verification_actions) && data.verification_actions.length > 0 && (
@@ -72,6 +77,7 @@ export default function BotMessage({
   rows.push(
     <div className="bot-header">
       <span className="category-tag">{data.category || 'Frontend Support'}</span>
+      {data.step_label && <span className="step-count-badge">{data.step_label}</span>}
       {badgeInfo && (
         <span className={`state-badge ${badgeInfo.className}`}>{badgeInfo.label}</span>
       )}
@@ -103,7 +109,7 @@ export default function BotMessage({
         <span className="followup-icon">💡</span>
         <div>
           <strong>Diagnostic Follow-up:</strong>
-          <p>{data.follow_up_question}</p>
+          <p style={{ whiteSpace: 'pre-line' }}>{data.follow_up_question}</p>
         </div>
       </div>
     );
@@ -113,9 +119,12 @@ export default function BotMessage({
     rows.push(
       <InteractiveOptions
         options={data.interactive_options}
+        stepLabel={data.step_label}
         canSkip={data.can_skip ?? true}
         onSelectOption={onSelectOption}
         onSkip={onSkipQuestions}
+        onGoBack={onGoBack}
+        onRestart={onRestart}
       />
     );
   }

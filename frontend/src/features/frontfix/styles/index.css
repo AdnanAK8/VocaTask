@@ -1581,3 +1581,174 @@
   border-color: #f87171;
   transform: translateY(-1px);
 }
+
+
+/* =========================================================
+   AIRTEL/AMAZON STYLE INTERACTIVE SUPPORT CHATBOX
+   ========================================================= */
+
+/* Welcome Screen Support Categories */
+.support-categories-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  width: 100%;
+  max-width: 800px;
+  margin-top: 12px;
+  margin-bottom: 20px;
+}
+
+.support-category-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #ffffff;
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease-in-out;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.support-category-card:hover {
+  border-color: var(--accent-teal);
+  background: #f7fbf8;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(40, 107, 84, 0.1);
+}
+
+.support-category-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.support-category-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  flex: 1;
+}
+
+.support-category-arrow {
+  font-size: 14px;
+  color: var(--accent-teal);
+  opacity: 0.6;
+  transition: transform 0.2s ease;
+}
+
+.support-category-card:hover .support-category-arrow {
+  transform: translateX(3px);
+  opacity: 1;
+}
+
+/* Step Badges */
+.step-count-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+
+.interactive-options-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.interactive-step-pill {
+  font-size: 11px;
+  font-weight: 700;
+  background: #eef2ff;
+  color: #4338ca;
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid #c7d2fe;
+}
+
+.interactive-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.interactive-nav-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.interactive-nav-btn {
+  background: none;
+  border: none;
+  font-size: 11px;
+  color: #475569;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.interactive-nav-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.restart-nav-btn {
+  color: #b91c1c;
+}
+
+.restart-nav-btn:hover {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+/* 5-Branch Verification Buttons */
+.verify-partial-btn {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fde68a;
+}
+
+.verify-partial-btn:hover {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  transform: translateY(-1px);
+}
+
+.verify-diff-btn {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+
+.verify-diff-btn:hover {
+  background: #dbeafe;
+  border-color: #3b82f6;
+  transform: translateY(-1px);
+}
+
+.verify-help-btn {
+  background: #f5f3ff;
+  color: #6d28d9;
+  border-color: #ddd6fe;
+}
+
+.verify-help-btn:hover {
+  background: #ede9fe;
+  border-color: #8b5cf6;
+  transform: translateY(-1px);
+}

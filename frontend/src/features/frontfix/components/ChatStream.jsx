@@ -11,6 +11,8 @@ export default function ChatStream({
   onSelectOption,
   onSkipQuestions,
   onVerifySolution,
+  onGoBack,
+  onRestart,
 }) {
   const endRef = useRef(null);
 
@@ -35,6 +37,8 @@ export default function ChatStream({
             onSelectOption={onSelectOption}
             onSkipQuestions={onSkipQuestions}
             onVerifySolution={onVerifySolution}
+            onGoBack={onGoBack}
+            onRestart={onRestart}
           />
         );
       })}

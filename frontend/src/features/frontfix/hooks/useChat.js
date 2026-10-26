@@ -5,14 +5,14 @@ import { sanitizeClientSide } from '../utils/sanitize.js';
 import { matchOfflineKnowledge, analyzeLog } from '../utils/diagnose.js';
 import { matchConversationalMessage } from '../utils/conversation.js';
 
-const TYPING_DELAY_MS = 1200;
+const TYPING_DELAY_MS = 1000;
 const MAX_SESSIONS = 12;
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 
 const TYPING_STATUSES = [
-  'Searching for a match to your error...',
-  'Checking the most likely cause...',
-  'Putting together clear fix suggestions...',
+  'Searching knowledge base and possible causes...',
+  'Evaluating diagnostic match...',
+  'Preparing step-by-step guidance...',
 ];
 const CONVERSATION_TYPING_STATUSES = ['Putting together a reply...'];
 
@@ -97,7 +97,8 @@ export default function useChat({ online, showToast, onReset }) {
           result = conversationalReply;
         } else if (online) {
           try {
-            const res = await fetch(`${BACKEND_URL}/api/diagnose`, {
+            const baseUrl = BACKEND_URL || '';
+            const res = await fetch(`${baseUrl}/api/diagnose`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -155,10 +156,14 @@ export default function useChat({ online, showToast, onReset }) {
 
   const verifySolution = useCallback(
     (actionType) => {
-      const text =
-        actionType === 'verify_solved'
-          ? 'This solved my problem! Thank you.'
-          : 'Still not working after trying the fix.';
+      const actionTexts = {
+        verify_solved: 'Yes, it worked! Issue resolved.',
+        verify_broken: 'No, the problem remains.',
+        verify_partial: 'It fixed part of the problem.',
+        verify_different_error: 'I got a different error after applying the fix.',
+        verify_need_help: 'I need help applying the fix.',
+      };
+      const text = actionTexts[actionType] || 'Verification status update.';
       send(text, { action: actionType });
     },
     [send]
@@ -178,6 +183,33 @@ export default function useChat({ online, showToast, onReset }) {
     },
     [showToast]
   );
+
+  const goBack = useCallback(() => {
+    setMessages((prev) => {
+      if (prev.length <= 2) return prev;
+      return prev.slice(0, -2);
+    });
+    if (historyRef.current.length >= 2) {
+      historyRef.current = historyRef.current.slice(0, -2);
+    }
+    showToast?.('Reverted to previous step.');
+  }, [showToast]);
+
+  const newChat = useCallback(() => {
+    setMessages([]);
+    setTypingStatuses(null);
+    setInput('');
+    setCurrentState('UNDERSTAND_PROBLEM');
+    setCaseSummary(null);
+    historyRef.current = [];
+    setActiveSessionId(null);
+    onReset?.();
+    showToast?.('New support session started');
+  }, [onReset, showToast]);
+
+  const restartDiagnosis = useCallback(() => {
+    newChat();
+  }, [newChat]);
 
   function sendPreset(key) {
     send(PRESET_SAMPLES[key] || key);
@@ -200,18 +232,6 @@ export default function useChat({ online, showToast, onReset }) {
 
     setTypingStatuses(null);
     addMessage({ type: 'log', filename: file.name, analysis: analyzeLog(text) });
-  }
-
-  function newChat() {
-    setMessages([]);
-    setTypingStatuses(null);
-    setInput('');
-    setCurrentState('UNDERSTAND_PROBLEM');
-    setCaseSummary(null);
-    historyRef.current = [];
-    setActiveSessionId(null);
-    onReset?.();
-    showToast('New chat session started');
   }
 
   function selectSession(session) {
@@ -243,6 +263,8 @@ export default function useChat({ online, showToast, onReset }) {
     selectOption,
     skipQuestions,
     verifySolution,
+    goBack,
+    restartDiagnosis,
     send,
     sendPreset,
     upload,

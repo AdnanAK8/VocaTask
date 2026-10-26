@@ -12,7 +12,7 @@ export default function VerificationActions({ actions, onVerify }) {
             title="Confirm this solution resolved your issue"
           >
             <span className="verify-icon">✅</span>
-            <span>This solved my problem</span>
+            <span>Yes, it worked</span>
           </button>
         )}
         {actions.includes('verify_broken') && (
@@ -22,7 +22,37 @@ export default function VerificationActions({ actions, onVerify }) {
             title="Troubleshoot further if the fix did not work"
           >
             <span className="verify-icon">❌</span>
-            <span>Still not working — troubleshoot further</span>
+            <span>No, the problem remains</span>
+          </button>
+        )}
+        {actions.includes('verify_partial') && (
+          <button
+            className="verification-btn verify-partial-btn"
+            onClick={() => onVerify?.('verify_partial')}
+            title="Report that part of the issue is resolved"
+          >
+            <span className="verify-icon">⚠️</span>
+            <span>It fixed part of the problem</span>
+          </button>
+        )}
+        {actions.includes('verify_different_error') && (
+          <button
+            className="verification-btn verify-diff-btn"
+            onClick={() => onVerify?.('verify_different_error')}
+            title="Report a different error that appeared"
+          >
+            <span className="verify-icon">🔄</span>
+            <span>I got a different error</span>
+          </button>
+        )}
+        {actions.includes('verify_need_help') && (
+          <button
+            className="verification-btn verify-help-btn"
+            onClick={() => onVerify?.('verify_need_help')}
+            title="Request beginner-friendly help applying this fix"
+          >
+            <span className="verify-icon">❓</span>
+            <span>I need help applying the fix</span>
           </button>
         )}
       </div>

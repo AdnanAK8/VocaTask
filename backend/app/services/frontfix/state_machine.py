@@ -24,6 +24,8 @@ class DiagnosticState(str, Enum):
 @dataclass
 class CaseSummary:
     problem_statement: str = ""
+    problem_category: Optional[str] = None  # e.g., 'website_down', 'react_error', 'api_backend', 'styling_ui', 'build_deploy', 'database', 'other'
+    technology: Optional[str] = None
     error_type: Optional[str] = None
     stack_trace: Optional[str] = None
     framework: Optional[str] = None
@@ -31,14 +33,19 @@ class CaseSummary:
     environment: Optional[str] = None
     data_source: Optional[str] = None  # e.g., 'api', 'state', 'props', 'db'
     reproduction_trigger: Optional[str] = None  # e.g., 'on_load', 'on_click', 'on_submit'
+    steps_to_reproduce: Optional[str] = None
     symptoms: List[str] = field(default_factory=list)
     tried_fixes: List[str] = field(default_factory=list)
     active_hypothesis: Optional[str] = None
     suggested_fix: Optional[str] = None
-    resolution_status: str = "unresolved"  # 'unresolved', 'verifying', 'resolved', 'escalated'
+    resolution_status: str = "unresolved"  # 'unresolved', 'verifying', 'resolved', 'escalated', 'partial'
     language: str = "en"
+    step_number: int = 1
+    max_steps: int = 3
     asked_questions: List[str] = field(default_factory=list)
     answered_facets: Dict[str, Any] = field(default_factory=dict)
+    collected_answers: Dict[str, str] = field(default_factory=dict)
+    history_stack: List[Dict[str, Any]] = field(default_factory=list)
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -55,6 +62,8 @@ class CaseSummary:
 
     def record_answer(self, facet: str, answer: str) -> None:
         self.answered_facets[facet] = answer
+        self.collected_answers[facet] = answer
+        self.step_number += 1
         self.updated_at = datetime.now(timezone.utc).isoformat()
         if facet == "data_source":
             self.data_source = answer
@@ -62,6 +71,10 @@ class CaseSummary:
             self.reproduction_trigger = answer
         elif facet == "framework":
             self.framework = answer
+        elif facet == "technology":
+            self.technology = answer
+        elif facet == "problem_category":
+            self.problem_category = answer
         elif facet == "symptom":
             if answer not in self.symptoms:
                 self.symptoms.append(answer)
@@ -85,8 +98,12 @@ class DiagnosticStateMachine:
             return DiagnosticState.RESOLVED
         if user_action == "verify_broken":
             return DiagnosticState.ESCALATE_OR_FALLBACK
+        if user_action in ("verify_partial", "verify_different_error", "verify_need_help"):
+            return DiagnosticState.COLLECT_CONTEXT
         if user_action == "skip_questions":
             return DiagnosticState.PRESENT_SOLUTION
+        if user_action == "restart":
+            return DiagnosticState.UNDERSTAND_PROBLEM
 
         # Completed states
         if current_state == DiagnosticState.RESOLVED:
@@ -98,28 +115,29 @@ class DiagnosticStateMachine:
             or evidence.get("fileLocation")
             or evidence.get("errorSignature")
             or len(query.strip().split("\n")) > 2
-            or any(kw in query.lower() for kw in ["typeerror", "referenceerror", "syntaxerror", "uncaught", "cors", "failed to fetch"])
+            or (case.data_source and case.reproduction_trigger)
+            or case.step_number > case.max_steps
         )
 
-        # Transition logic
         if current_state in (DiagnosticState.UNDERSTAND_PROBLEM, DiagnosticState.COLLECT_CONTEXT):
-            if has_solid_evidence or len(case.answered_facets) >= 2:
+            if has_solid_evidence:
                 if has_kb_match and is_kb_reliable:
                     return DiagnosticState.PRESENT_SOLUTION
-                elif has_kb_match:
-                    return DiagnosticState.EVALUATE_EVIDENCE
-                else:
-                    return DiagnosticState.AI_DIAGNOSIS
-            else:
-                return DiagnosticState.COLLECT_CONTEXT
+                return DiagnosticState.SEARCH_KNOWLEDGE_BASE
+            return DiagnosticState.COLLECT_CONTEXT
 
         if current_state == DiagnosticState.SEARCH_KNOWLEDGE_BASE:
-            return DiagnosticState.EVALUATE_EVIDENCE if has_kb_match else DiagnosticState.AI_DIAGNOSIS
+            return DiagnosticState.EVALUATE_EVIDENCE
 
-        if current_state in (DiagnosticState.EVALUATE_EVIDENCE, DiagnosticState.AI_DIAGNOSIS):
+        if current_state == DiagnosticState.EVALUATE_EVIDENCE:
+            if has_kb_match and is_kb_reliable:
+                return DiagnosticState.PRESENT_SOLUTION
+            return DiagnosticState.AI_DIAGNOSIS
+
+        if current_state == DiagnosticState.AI_DIAGNOSIS:
             return DiagnosticState.PRESENT_SOLUTION
 
         if current_state == DiagnosticState.PRESENT_SOLUTION:
             return DiagnosticState.VERIFY_SOLUTION
 
-        return DiagnosticState.COLLECT_CONTEXT
+        return current_state
