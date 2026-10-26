@@ -1,7 +1,7 @@
 import os
 from typing import List
 from dotenv import load_dotenv
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from psycopg.conninfo import make_conninfo
 
 # Search for environment variables and secrets in hierarchical order:
@@ -143,9 +143,9 @@ class Settings(BaseSettings):
             return "openai"
         return "builtin"
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+
 
 settings = Settings()
 

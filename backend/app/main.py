@@ -55,6 +55,17 @@ async def database_unavailable_handler(
         content={"detail": "Database temporarily unavailable."},
     )
 
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(_request, exc: Exception):
+    if hasattr(exc, "status_code") and hasattr(exc, "detail"):
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    logger.error("Unhandled error: %s", exc, exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected server error occurred. You can diagnose this issue in FrontFix AI."},
+    )
+
+
 # CORS is intentionally limited to explicitly configured frontend origins.
 app.add_middleware(
     RateLimitMiddleware,

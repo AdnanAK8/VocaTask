@@ -1,13 +1,15 @@
 import { useEffect } from 'react';
 import FrontFixApp from '../App.jsx';
 import './FrontFixDrawer.css';
+import type { CapturedError } from '../../../shared/services/errorTelemetry';
 
 interface FrontFixDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  initialError?: CapturedError | null;
 }
 
-export const FrontFixDrawer = ({ isOpen, onClose }: FrontFixDrawerProps) => {
+export const FrontFixDrawer = ({ isOpen, onClose, initialError }: FrontFixDrawerProps) => {
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -34,7 +36,7 @@ export const FrontFixDrawer = ({ isOpen, onClose }: FrontFixDrawerProps) => {
         aria-modal="true"
         aria-label="FrontFix AI Diagnostic Chatbot"
       >
-        <FrontFixApp onClose={onClose} isDrawer={true} />
+        <FrontFixApp onClose={onClose} isDrawer={true} initialError={initialError} />
       </aside>
     </div>
   );

@@ -158,3 +158,209 @@
     margin-left: 6px;
   }
 }
+
+
+/* =========================================================
+   LIVE ERROR BADGE & PULSE ANIMATIONS
+   ========================================================= */
+@keyframes errorPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+.frontfix-dock-badge.has-errors,
+.header-error-badge {
+  background: #ef4444 !important;
+  color: #ffffff !important;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 999px;
+  animation: errorPulse 2s infinite;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.header-frontfix-btn.has-errors {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+.header-frontfix-btn.has-errors:hover {
+  background: #fee2e2;
+  border-color: #f87171;
+  color: #b91c1c;
+}
+
+.frontfix-left-dock-btn.has-errors {
+  background: linear-gradient(135deg, #b91c1c 0%, #991b1b 100%);
+  box-shadow: 0 4px 18px rgba(185, 28, 28, 0.4);
+}
+
+.frontfix-left-dock-btn.has-errors:hover {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+}
+
+/* Live error hero card */
+.live-error-hero-card {
+  background: #fff5f5;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  text-align: left;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.08);
+  animation: frontfixSlideInLeft 0.3s ease-out;
+}
+
+.live-error-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.live-error-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  animation: errorPulse 1.8s infinite;
+}
+
+.live-error-badge-text {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #b91c1c;
+}
+
+.live-error-source-tag {
+  background: #fee2e2;
+  color: #991b1b;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+.live-error-message {
+  font-size: 13px;
+  font-weight: 600;
+  color: #7f1d1d;
+  font-family: 'SF Mono', Consolas, Monaco, monospace;
+  background: #ffffff;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #fee2e2;
+  word-break: break-word;
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+.live-error-meta {
+  font-size: 11px;
+  color: #991b1b;
+  margin-top: 6px;
+  font-family: monospace;
+}
+
+.live-error-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.live-error-diagnose-btn {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+}
+
+.live-error-diagnose-btn:hover {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+  transform: translateY(-1px);
+}
+
+.live-error-dismiss-btn {
+  background: transparent;
+  color: #64748b;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.live-error-dismiss-btn:hover {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+/* Live error banner above active chat stream */
+.chat-live-error-banner {
+  background: #fef2f2;
+  border-bottom: 1px solid #fecaca;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  z-index: 10;
+}
+
+.chat-live-error-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.chat-live-error-text {
+  font-size: 12px;
+  color: #991b1b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-live-error-btn {
+  background: #dc2626;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.18s ease;
+}
+
+.chat-live-error-btn:hover {
+  background: #b91c1c;
+}

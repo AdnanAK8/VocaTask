@@ -110,43 +110,25 @@ class DiagnosticEngine:
                 "follow_up_prompt": "Which React hook is involved, and what exact error appears in your browser console?",
                 "source": {
                     "title": "React.dev — Handling Errors in React",
-                    "url": "https://react.dev/reference/react/Component#catching-rendering-errors-with-an-error-boundary",
-                },
-            }
-        elif any(w in q for w in ["api", "fetch", "network", "request"]):
-            return {
-                "category": "Network & API Inquiry",
-                "title": "Need More Network Details to Diagnose",
-                "problem": f"Your query '{query}' indicates an API problem without the HTTP status or headers.",
-                "likely_cause": "API issues range from browser CORS policy blocks to 404 route mismatches and 500 server crashes.",
-                "fix_steps": [
-                    "1. Open DevTools (F12) -> Network tab, click the failed request, and check the HTTP Status Code (e.g. 404, 500, or (failed) for CORS).",
-                    "2. View the 'Response' tab to check if the server returned HTML or JSON.",
-                    "3. Mention whether this happens in local development (localhost) or in deployed production.",
-                ],
-                "extra_tips": "If the error says 'No Access-Control-Allow-Origin', configure a dev proxy in your vite.config.ts or next.config.js.",
-                "follow_up_prompt": "What HTTP status code (e.g. 404, 500, or CORS blocked) is shown in your DevTools Network tab?",
-                "source": {
-                    "title": "MDN Web Docs — Inspecting Network Activity",
-                    "url": "https://developer.mozilla.org/en-US/docs/Learn/Common_questions/Tools_and_setup/What_are_browser_developer_tools#the_network_monitor",
+                    "url": "https://react.dev/learn/state-a-components-memory",
                 },
             }
         else:
             return {
-                "category": "Diagnostic Inquiry",
+                "category": "Frontend Diagnostic Inquiry",
                 "title": "Need More Information to Diagnose",
-                "problem": f"The query '{query}' is too brief or ambiguous to identify the exact frontend issue.",
-                "likely_cause": "The input doesn't yet contain an error message, stack trace, affected framework, or expected behavior.",
+                "problem": f"Your query '{query}' is too brief or ambiguous to isolate the technical root cause.",
+                "likely_cause": "Frontend errors range from JavaScript runtime exceptions to CSS layout defects and network/API failures.",
                 "fix_steps": [
-                    "1. Copy and paste the exact red error message or stack trace from your browser console (Press F12 -> Console).",
-                    "2. Mention the framework/library involved (e.g., React 19, Next.js, Vite, Vanilla JS, CSS Flex/Grid).",
-                    "3. Paste the relevant snippet of code where the error or layout bug occurs.",
+                    "1. Share the exact error message or stack trace from the browser console (F12).",
+                    "2. Paste the relevant code snippet where the error originates.",
+                    "3. Mention your framework (React 19, Next.js, Vite, Vue 3) or runtime environment.",
                 ],
-                "extra_tips": "You can also upload a full log or error file directly using the 'Upload Log' button.",
-                "follow_up_prompt": "Could you share the exact error text or console message you are seeing?",
+                "extra_tips": "Opening browser DevTools (F12 -> Console) reveals the exact file and line number.",
+                "follow_up_prompt": "Could you share the red error message from DevTools or the code snippet causing issues?",
                 "source": {
-                    "title": "MDN Web Docs — What Are Browser Developer Tools?",
-                    "url": "https://developer.mozilla.org/en-US/docs/Learn/Common_questions/Tools_and_setup/What_are_browser_developer_tools",
+                    "title": "MDN Web Docs — Error Handling",
+                    "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Control_flow_and_error_handling",
                 },
             }
 
@@ -293,7 +275,7 @@ class DiagnosticEngine:
                         generated_by = provider
                         model_label = f"✨ AI Explained ({provider.capitalize()})"
                 except Exception as err:
-                    print(f"[DiagnosticEngine] LLM generation error: {err}")
+                    pass
 
             file_loc = evidence.get("fileLocation")
             file_hint = None
@@ -322,8 +304,8 @@ class DiagnosticEngine:
                 "extra_tips": extra_tips,
                 "follow_up_question": follow_up_question,
                 "prevention_checklist": top_item.get("prevention_checklist", [
-                    "Implement comprehensive unit tests.",
-                    "Enable strict linting rules.",
+                    "Always check browser console (F12) for uncaught exceptions.",
+                    "Verify component props and default states.",
                 ]),
                 "related_issues": top_item.get("related_issues", []),
                 "source": {
@@ -347,13 +329,60 @@ class DiagnosticEngine:
                 },
             }
 
-        # 4. Low-confidence fallback (Never invent files or facts)
+        # 4. Try Dynamic AI Diagnosis for arbitrary / uncatalogued errors
         first_line = clean_text.split("\n")[0] if clean_text else "Frontend Exception"
         file_loc = evidence.get("fileLocation")
         file_hint = None
         if file_loc and file_loc.get("file"):
             file_hint = f"{file_loc['file']}:{file_loc['line']}" if file_loc.get("line") else file_loc["file"]
 
+        if self.llm_service.is_available():
+            try:
+                llm_diag = await self.llm_service.diagnose_arbitrary_error(clean_text, sanitized_history, evidence)
+                if llm_diag and llm_diag.get("problem") and llm_diag.get("fix_steps"):
+                    provider_name = str(llm_diag.get("provider", "ai")).capitalize()
+                    source_title = llm_diag.get("source_title", "Official Documentation")
+                    source_url = llm_diag.get("source_url", "https://developer.mozilla.org/en-US/docs/Web")
+                    return {
+                        "matched": False,
+                        "generated_by": llm_diag.get("provider", "llm"),
+                        "model_label": f"⚡ Dynamic AI Diagnosis ({provider_name})",
+                        "is_followup_needed": False,
+                        "is_uncertain": False,
+                        "confidence_score": 0.95,
+                        "category": llm_diag.get("category", "Frontend Error Diagnosis"),
+                        "title": llm_diag.get("title", f"Diagnosis: {first_line[:60]}"),
+                        "problem": llm_diag.get("problem"),
+                        "likely_cause": f"Based on error analysis: {llm_diag.get('likely_cause')}",
+                        "fix_steps": llm_diag.get("fix_steps"),
+                        "file_hint": file_hint,
+                        "code_before": llm_diag.get("code_before", "// Offending code snippet"),
+                        "code_after": llm_diag.get("code_after", "// Recommended fix"),
+                        "corrected_code": llm_diag.get("code_after", "// Recommended fix"),
+                        "code_context_note": "Tailored real-time solution generated for your frontend error.",
+                        "extra_tips": llm_diag.get("extra_tips", "Inspect browser console and network headers."),
+                        "follow_up_question": None,
+                        "prevention_checklist": llm_diag.get("prevention_checklist", [
+                            "Always catch async promises with try/catch.",
+                            "Use React ErrorBoundary around critical component subtrees.",
+                        ]),
+                        "related_issues": ["typeerror_map", "cors_policy_blocked", "infinite_rerender"],
+                        "source": {"title": source_title, "url": source_url},
+                        "sources": [{"title": source_title, "url": source_url}],
+                        "confirmation_prompt": "Did this tailored diagnosis resolve your issue? Let us know below.",
+                        "redactions_count": redactions_count,
+                        "evidence_summary": {
+                            "input_source": evidence.get("inputSource"),
+                            "is_browser_captured": evidence.get("isBrowserCaptured"),
+                            "file_location": evidence.get("fileLocation"),
+                            "detected_framework": evidence.get("detectedFramework"),
+                            "confirmed_observations": evidence.get("observations"),
+                        },
+                    }
+            except Exception:
+                pass
+
+        # 5. Low-confidence fallback (Never invent files or facts)
         return {
             "matched": False,
             "generated_by": "knowledge_base",

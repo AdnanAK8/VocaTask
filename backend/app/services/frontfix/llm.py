@@ -1,7 +1,10 @@
 import json
+import logging
 import requests
 from .config import config, is_real_key
 from .evidence import EvidenceService
+
+logger = logging.getLogger("frontfix_llm")
 
 
 class LLMService:
@@ -12,6 +15,7 @@ class LLMService:
         self.openai_api_key = cfg.get("openaiApiKey", config.openai_api_key)
         self.openai_base_url = (cfg.get("openaiBaseUrl", config.openai_base_url)).rstrip("/")
         self.openai_model = cfg.get("openaiModel", config.openai_model)
+        self.groq_api_key = cfg.get("groqApiKey", getattr(config, "groq_api_key", ""))
 
         self._genai_model = None
 
@@ -36,7 +40,11 @@ class LLMService:
         return self._genai_model
 
     def is_available(self) -> bool:
-        return is_real_key(self.gemini_api_key) or is_real_key(self.openai_api_key)
+        return (
+            is_real_key(self.gemini_api_key)
+            or is_real_key(self.openai_api_key)
+            or is_real_key(self.groq_api_key)
+        )
 
     async def generate_grounded_response(
         self,
@@ -116,7 +124,7 @@ class LLMService:
             "JSON Response:"
         )
 
-        # 1. Try Gemini if configured
+        # 1. Try Gemini
         if is_real_key(self.gemini_api_key):
             try:
                 text = self._call_gemini(prompt)
@@ -126,9 +134,21 @@ class LLMService:
                     if validated:
                         return {"output": validated, "provider": "gemini"}
             except Exception as err:
-                print(f"[LLMService] Gemini generation failed, falling back to canonical knowledge: {err}")
+                logger.warning("Gemini generation failed: %s", err)
 
-        # 2. Try OpenAI if configured
+        # 2. Try Groq
+        if is_real_key(self.groq_api_key):
+            try:
+                text = self._call_groq(prompt)
+                if text:
+                    parsed = self._parse_json_response(text)
+                    validated = self._validate_schema(parsed, retrieved_item)
+                    if validated:
+                        return {"output": validated, "provider": "groq"}
+            except Exception as err:
+                logger.warning("Groq generation failed: %s", err)
+
+        # 3. Try OpenAI
         if is_real_key(self.openai_api_key):
             try:
                 text = self._call_openai(prompt)
@@ -138,11 +158,116 @@ class LLMService:
                     if validated:
                         return {"output": validated, "provider": "openai"}
             except Exception as err:
-                print(f"[LLMService] OpenAI generation failed, falling back to canonical knowledge: {err}")
+                logger.warning("OpenAI generation failed: %s", err)
 
         return {"output": None, "provider": "knowledge_base"}
 
+    async def diagnose_arbitrary_error(
+        self,
+        user_query: str,
+        conversation_history: list | None = None,
+        evidence: dict | None = None,
+    ) -> dict | None:
+        """
+        Dynamically diagnoses ANY arbitrary uncatalogued frontend error using available LLMs.
+        Returns a rich structured diagnostic response.
+        """
+        if not self.is_available():
+            return None
+
+        framework = evidence.get("detectedFramework", "Frontend JavaScript") if evidence else "Frontend JavaScript"
+        file_loc = "Not specified"
+        if evidence and evidence.get("fileLocation"):
+            f = evidence["fileLocation"].get("file", "")
+            ln = evidence["fileLocation"].get("line", "")
+            file_loc = f"{f}:{ln}" if ln else f
+
+        prompt = (
+            "You are FrontFix AI, an elite frontend diagnostics engineer.\n"
+            "A developer encountered a real frontend runtime error, exception, or UI issue.\n"
+            "Analyze the error query, stack trace, and context, then return a comprehensive fix in JSON format.\n"
+            f"Detected Framework/Runtime: {framework}\n"
+            f"Detected File Location: {file_loc}\n\n"
+            "JSON SCHEMA REQUIREMENT:\n"
+            "{\n"
+            '  "category": "High-level Category (e.g. React 19 Runtime, Vite ESM Module, Network/CORS, CSS Stacking, Web Audio API)",\n'
+            '  "title": "Clear, informative title for the specific error",\n'
+            '  "problem": "Precise 1-2 sentence description of what failed and why",\n'
+            '  "likely_cause": "Detailed technical root cause analysis based on the error output",\n'
+            '  "fix_steps": ["1. First actionable step", "2. Second actionable step", "3. Third actionable step"],\n'
+            '  "code_before": "// Offending code or typical broken pattern",\n'
+            '  "code_after": "// Exact corrected code solution",\n'
+            '  "extra_tips": "Performance, security, or framework best practices to avoid recurrence",\n'
+            '  "prevention_checklist": ["Precaution 1", "Precaution 2", "Precaution 3"],\n'
+            '  "source_title": "Official Documentation or MDN",\n'
+            '  "source_url": "https://developer.mozilla.org/ or official docs link"\n'
+            "}\n\n"
+            f"DEVELOPER ERROR QUERY:\n{user_query}\n\n"
+            "Return ONLY the raw JSON object:"
+        )
+
+        # 1. Try Gemini
+        if is_real_key(self.gemini_api_key):
+            try:
+                text = self._call_gemini(prompt)
+                if text:
+                    parsed = self._parse_json_response(text)
+                    if parsed and parsed.get("problem") and parsed.get("fix_steps"):
+                        parsed["provider"] = "gemini"
+                        return parsed
+            except Exception as err:
+                logger.warning("Gemini arbitrary error diagnosis failed: %s", err)
+
+        # 2. Try Groq
+        if is_real_key(self.groq_api_key):
+            try:
+                text = self._call_groq(prompt)
+                if text:
+                    parsed = self._parse_json_response(text)
+                    if parsed and parsed.get("problem") and parsed.get("fix_steps"):
+                        parsed["provider"] = "groq"
+                        return parsed
+            except Exception as err:
+                logger.warning("Groq arbitrary error diagnosis failed: %s", err)
+
+        # 3. Try OpenAI
+        if is_real_key(self.openai_api_key):
+            try:
+                text = self._call_openai(prompt)
+                if text:
+                    parsed = self._parse_json_response(text)
+                    if parsed and parsed.get("problem") and parsed.get("fix_steps"):
+                        parsed["provider"] = "openai"
+                        return parsed
+            except Exception as err:
+                logger.warning("OpenAI arbitrary error diagnosis failed: %s", err)
+
+        return None
+
     def _call_gemini(self, prompt: str) -> str | None:
+        # Try modern google.genai client if installed
+        try:
+            from google import genai
+            from google.genai import types
+            client = genai.Client(api_key=self.gemini_api_key)
+            for g_model in [self.gemini_model, "gemini-flash-lite-latest", "gemini-2.0-flash"]:
+                try:
+                    resp = client.models.generate_content(
+                        model=g_model,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            temperature=0.1,
+                        ),
+                    )
+                    if resp and resp.text:
+                        return resp.text.strip()
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        # Try legacy model wrapper
         model = self._get_genai_model()
         if model:
             try:
@@ -152,45 +277,79 @@ class LLMService:
                 pass
 
         # Native REST fallback
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.gemini_model}:generateContent?key={self.gemini_api_key}"
-        res = requests.post(
-            url,
-            json={
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "temperature": 0.2,
-                    "responseMimeType": "application/json",
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.gemini_model}:generateContent?key={self.gemini_api_key}"
+            res = requests.post(
+                url,
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.1,
+                        "responseMimeType": "application/json",
+                    },
                 },
-            },
-            timeout=8.0,
-        )
-        if res.status_code == 200:
-            data = res.json()
-            return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                timeout=8.0,
+            )
+            if res.status_code == 200:
+                data = res.json()
+                return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+        except Exception:
+            pass
+        return None
+
+    def _call_groq(self, prompt: str) -> str | None:
+        if not self.groq_api_key:
+            return None
+        try:
+            res = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.groq_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [
+                        {"role": "system", "content": "You are a senior frontend diagnostics engineer returning valid JSON."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "temperature": 0.1,
+                    "response_format": {"type": "json_object"},
+                },
+                timeout=8.0,
+            )
+            if res.status_code == 200:
+                data = res.json()
+                return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        except Exception:
+            pass
         return None
 
     def _call_openai(self, prompt: str) -> str | None:
         url = f"{self.openai_base_url}/chat/completions"
-        res = requests.post(
-            url,
-            headers={
-                "Authorization": f"Bearer {self.openai_api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": self.openai_model,
-                "messages": [
-                    {"role": "system", "content": "You are a frontend engineering assistant returning valid JSON."},
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0.2,
-                "response_format": {"type": "json_object"},
-            },
-            timeout=8.0,
-        )
-        if res.status_code == 200:
-            data = res.json()
-            return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        try:
+            res = requests.post(
+                url,
+                headers={
+                    "Authorization": f"Bearer {self.openai_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.openai_model,
+                    "messages": [
+                        {"role": "system", "content": "You are a frontend engineering assistant returning valid JSON."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "temperature": 0.1,
+                    "response_format": {"type": "json_object"},
+                },
+                timeout=8.0,
+            )
+            if res.status_code == 200:
+                data = res.json()
+                return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        except Exception:
+            pass
         return None
 
     def _parse_json_response(self, text: str) -> dict | None:

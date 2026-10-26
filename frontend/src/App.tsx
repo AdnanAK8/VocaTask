@@ -7,7 +7,7 @@ import { VoiceRecorder, TaskConfirmModal, useTaskReminders } from './features/ta
 import type { Task, ExtractedTask, TaskCreateInput, TaskUpdateInput, PriorityType, CategoryType } from './features/tasks';
 import { AuthGateDesign as AuthGate, UserProfileMenu, authService } from './features/auth';
 import type { User } from './features/auth';
-import { SettingsModal, InstallPwaBanner, ToastReminder, api } from './shared';
+import { SettingsModal, InstallPwaBanner, ToastReminder, api, ErrorBoundary, errorTelemetry, type CapturedError } from './shared';
 import aivantaLogo from './assets/Aivanta-Logo.png';
 
 interface TaskFormValues {
@@ -50,13 +50,31 @@ const formatTime = (value?: string | null): string => {
   });
 };
 
-export const App = () => {
+interface AppContentProps {
+  isFrontFixOpen: boolean;
+  setIsFrontFixOpen: (open: boolean) => void;
+  frontFixError: CapturedError | null;
+  setFrontFixError: (err: CapturedError | null) => void;
+}
+
+const AppContent = ({
+  isFrontFixOpen,
+  setIsFrontFixOpen,
+  frontFixError,
+  setFrontFixError,
+}: AppContentProps) => {
   const [currentUser, setCurrentUser] = useState<User | null>(() => authService.getStoredUser());
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [extractedTask, setExtractedTask] = useState<ExtractedTask | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isFrontFixOpen, setIsFrontFixOpen] = useState(false);
+  const [errorCount, setErrorCount] = useState<number>(() => errorTelemetry.getErrorCount());
+
+  useEffect(() => {
+    return errorTelemetry.subscribe((errors) => {
+      setErrorCount(errors.length);
+    });
+  }, []);
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const [isTaskFormOpen, setIsTaskFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
@@ -295,14 +313,19 @@ export const App = () => {
     <div className="app-shell">
       {/* Option on the left: Pop up FrontFix Chatbot from left side */}
       <button
-        className="frontfix-left-dock-btn"
-        onClick={() => setIsFrontFixOpen(true)}
+        className={`frontfix-left-dock-btn ${errorCount > 0 ? 'has-errors' : ''}`}
+        onClick={() => {
+          setFrontFixError(errorTelemetry.getLatestError());
+          setIsFrontFixOpen(true);
+        }}
         aria-label="Open FrontFix AI Chatbot from left"
-        title="Open FrontFix AI Diagnostic Chatbot (Pops up from left)"
+        title={errorCount > 0 ? `${errorCount} frontend issue(s) detected - click to fix` : 'Open FrontFix AI Diagnostic Chatbot (Pops up from left)'}
       >
         <span className="frontfix-dock-icon">⚡</span>
         <span className="frontfix-dock-text">FrontFix AI</span>
-        <span className="frontfix-dock-badge">CHAT</span>
+        <span className={`frontfix-dock-badge ${errorCount > 0 ? 'has-errors' : ''}`}>
+          {errorCount > 0 ? `${errorCount} ISSUE${errorCount > 1 ? 'S' : ''}` : 'CHAT'}
+        </span>
       </button>
       <header className="header">
         <div className="brand">
@@ -319,13 +342,17 @@ export const App = () => {
           </span>
         </div>
         <button
-          className="header-frontfix-btn"
-          onClick={() => setIsFrontFixOpen(true)}
+          className={`header-frontfix-btn ${errorCount > 0 ? 'has-errors' : ''}`}
+          onClick={() => {
+            setFrontFixError(errorTelemetry.getLatestError());
+            setIsFrontFixOpen(true);
+          }}
           aria-label="Open FrontFix AI Chatbot"
-          title="Open FrontFix AI Diagnostic Chatbot from left"
+          title={errorCount > 0 ? `${errorCount} frontend error(s) intercepted - click to diagnose` : 'Open FrontFix AI Diagnostic Chatbot from left'}
         >
           <Sparkles size={15} />
           <span>FrontFix AI</span>
+          {errorCount > 0 && <span className="header-error-badge">{errorCount}</span>}
         </button>
         <div className="header-actions">
           <button
@@ -448,7 +475,18 @@ export const App = () => {
       <nav className="bottom-nav" aria-label="Main navigation">
         <a className="nav-item active" href="#tasks"><Check size={18} />Tasks</a>
         <button className="nav-add" onClick={() => setIsVoiceOpen(true)} aria-label="Add a task by voice" title="Add by voice"><Mic size={21} /></button>
-        <button className="nav-item" onClick={() => setIsFrontFixOpen(true)} aria-label="Open FrontFix AI Chatbot" title="FrontFix Chatbot"><Sparkles size={18} /><span>Chatbot</span></button>
+        <button
+          className="nav-item"
+          onClick={() => {
+            setFrontFixError(errorTelemetry.getLatestError());
+            setIsFrontFixOpen(true);
+          }}
+          aria-label="Open FrontFix AI Chatbot"
+          title="FrontFix Chatbot"
+        >
+          <Sparkles size={18} style={errorCount > 0 ? { color: '#ef4444' } : undefined} />
+          <span>{errorCount > 0 ? `Issues (${errorCount})` : 'Chatbot'}</span>
+        </button>
         <button className="nav-item" onClick={() => setIsSettingsOpen(true)}><Settings size={18} />Settings</button>
       </nav>
 
@@ -527,8 +565,30 @@ export const App = () => {
       <FrontFixDrawer
         isOpen={isFrontFixOpen}
         onClose={() => setIsFrontFixOpen(false)}
+        initialError={frontFixError}
       />
     </div>
+  );
+};
+
+export const App = () => {
+  const [frontFixError, setFrontFixError] = useState<CapturedError | null>(null);
+  const [isFrontFixOpen, setIsFrontFixOpen] = useState(false);
+
+  return (
+    <ErrorBoundary
+      onOpenFrontFix={(err) => {
+        setFrontFixError(err || errorTelemetry.getLatestError());
+        setIsFrontFixOpen(true);
+      }}
+    >
+      <AppContent
+        isFrontFixOpen={isFrontFixOpen}
+        setIsFrontFixOpen={setIsFrontFixOpen}
+        frontFixError={frontFixError}
+        setFrontFixError={setFrontFixError}
+      />
+    </ErrorBoundary>
   );
 };
 
