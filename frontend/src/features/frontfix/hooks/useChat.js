@@ -15,6 +15,28 @@ const TYPING_STATUSES = [
   'Preparing step-by-step guidance...',
 ];
 const CONVERSATION_TYPING_STATUSES = ['Putting together a reply...'];
+const API_ORIGIN_OPTIONS = ['React application', 'Postman', 'Backend service', 'Not sure'];
+const WEBSITE_SYMPTOM_OPTIONS = [
+  'The website shows a blank or black screen',
+  'The website is loading very slowly',
+  'I see an error message on screen',
+  'Some buttons or features are not working',
+  'The website is completely unavailable',
+  'Something else',
+  "I'm not sure",
+];
+const WEBSITE_TIMING_OPTIONS = [
+  'Immediately when I open the website',
+  'After logging in',
+  'After clicking a button',
+  'After refreshing the page',
+  'It happens randomly',
+];
+const CONSOLE_OPTIONS = [
+  'Yes, I see a red error message',
+  'No errors are visible',
+  "I don't know how to check",
+];
 
 const INITIAL_SESSIONS = [
   {
@@ -44,6 +66,10 @@ export default function useChat({ online, showToast, onReset }) {
   const [currentState, setCurrentState] = useState('UNDERSTAND_PROBLEM');
   const [caseSummary, setCaseSummary] = useState(null);
   const [language, setLanguage] = useState('auto');
+  const [apiFlow, setApiFlow] = useState(null);
+  const apiProblemRef = useRef('');
+  const [websiteFlow, setWebsiteFlow] = useState(null);
+  const websiteAnswersRef = useRef([]);
 
   // Sent to the backend with each query; a ref because it doesn't affect rendering.
   const historyRef = useRef([]);
@@ -75,6 +101,129 @@ export default function useChat({ online, showToast, onReset }) {
       if (!query) return;
       if (privacy) query = sanitizeClientSide(query);
 
+      let requestQuery = query;
+      let apiQuestionReply = null;
+      const normalizedQuery = query.toLowerCase().replace(/[.!?]+$/, '').trim();
+      const isWebsiteCategory = ['website not working', 'website down', 'site not working'].includes(
+        normalizedQuery
+      );
+      const mentionsBlankScreen =
+        /\b(?:blank|black|white)\s+(?:screen|page)\b|\bscreen\s+is\s+(?:blank|black|white)\b|\bcompletely\s+(?:blank|black|white)\b/.test(
+          normalizedQuery
+        );
+      const hasConcreteError =
+        /\b(?:typeerror|referenceerror|syntaxerror|cors|uncaught|econnrefused|404|500|502)\b/.test(
+          normalizedQuery
+        ) || query.split('\n').length > 2;
+
+      if (
+        !options.action &&
+        !apiFlow &&
+        currentState === 'UNDERSTAND_PROBLEM' &&
+        ['api or backend problem', 'api problem', 'backend problem'].includes(normalizedQuery)
+      ) {
+        apiQuestionReply = { ...matchOfflineKnowledge(query), can_skip: false };
+        setApiFlow('problem');
+        setCurrentState('COLLECT_CONTEXT');
+      } else if (!options.action && apiFlow === 'problem') {
+        if (normalizedQuery === 'api request is failing') {
+          apiProblemRef.current = query;
+          apiQuestionReply = {
+            matched: false,
+            response_type: 'follow_up_question',
+            state: 'COLLECT_CONTEXT',
+            title: 'FrontFix AI Support',
+            follow_up_question: 'Where are you making the API request from?',
+            interactive_options: API_ORIGIN_OPTIONS,
+            can_skip: false,
+            verification_actions: [],
+          };
+          setApiFlow('origin');
+        } else {
+          setApiFlow(null);
+        }
+      } else if (!options.action && apiFlow === 'origin') {
+        requestQuery = [
+          'API or backend problem',
+          `Problem: ${apiProblemRef.current}`,
+          `Request origin: ${query}`,
+        ].join('\n');
+        apiProblemRef.current = '';
+        setApiFlow(null);
+      } else if (
+        !options.action &&
+        !apiFlow &&
+        !websiteFlow &&
+        currentState === 'UNDERSTAND_PROBLEM' &&
+        isWebsiteCategory
+      ) {
+        apiQuestionReply = {
+          ...matchOfflineKnowledge(query),
+          interactive_options: WEBSITE_SYMPTOM_OPTIONS,
+          can_skip: false,
+        };
+        setWebsiteFlow('symptom');
+      } else if (
+        !options.action &&
+        !apiFlow &&
+        !websiteFlow &&
+        currentState === 'UNDERSTAND_PROBLEM' &&
+        mentionsBlankScreen &&
+        !hasConcreteError
+      ) {
+        websiteAnswersRef.current = [query];
+        apiQuestionReply = {
+          matched: false,
+          response_type: 'follow_up_question',
+          state: 'COLLECT_CONTEXT',
+          title: 'FrontFix AI Support',
+          greeting: "I understand the page is blank. Let's gather a couple of details before diagnosing it.",
+          follow_up_question: 'When does the blank or black screen appear?',
+          interactive_options: WEBSITE_TIMING_OPTIONS,
+          can_skip: false,
+          verification_actions: [],
+        };
+        setWebsiteFlow('timing');
+        setCurrentState('COLLECT_CONTEXT');
+      } else if (!options.action && websiteFlow === 'symptom') {
+        websiteAnswersRef.current = [query];
+        apiQuestionReply = {
+          matched: false,
+          response_type: 'follow_up_question',
+          state: 'COLLECT_CONTEXT',
+          title: 'FrontFix AI Support',
+          follow_up_question: mentionsBlankScreen
+            ? 'When does the blank or black screen appear?'
+            : 'When does this problem happen?',
+          interactive_options: WEBSITE_TIMING_OPTIONS,
+          can_skip: false,
+          verification_actions: [],
+        };
+        setWebsiteFlow('timing');
+        setCurrentState('COLLECT_CONTEXT');
+      } else if (!options.action && websiteFlow === 'timing') {
+        websiteAnswersRef.current.push(query);
+        apiQuestionReply = {
+          matched: false,
+          response_type: 'follow_up_question',
+          state: 'COLLECT_CONTEXT',
+          title: 'FrontFix AI Support',
+          follow_up_question: 'Do you see an error in your browser console (press F12, then choose Console)?',
+          interactive_options: CONSOLE_OPTIONS,
+          can_skip: false,
+          verification_actions: [],
+        };
+        setWebsiteFlow('console');
+      } else if (!options.action && websiteFlow === 'console') {
+        websiteAnswersRef.current.push(query);
+        requestQuery = [
+          'Website not working',
+          ...websiteAnswersRef.current.map((answer, index) => `Troubleshooting detail ${index + 1}: ${answer}`),
+        ].join('\n');
+        websiteAnswersRef.current = [];
+        setWebsiteFlow(null);
+      }
+
       addMessage({ type: 'user', text: query });
       historyRef.current.push({ role: 'user', content: query });
       addHistoryEntry(query.split('\n')[0], query);
@@ -83,17 +232,21 @@ export default function useChat({ online, showToast, onReset }) {
       setSending(true);
 
       const conversationalReply =
-        currentState === 'UNDERSTAND_PROBLEM' && !options.action
+        !apiQuestionReply && currentState === 'UNDERSTAND_PROBLEM' && !options.action
           ? matchConversationalMessage(query)
           : null;
 
-      setTypingStatuses(conversationalReply ? CONVERSATION_TYPING_STATUSES : TYPING_STATUSES);
+      setTypingStatuses(
+        apiQuestionReply || conversationalReply ? CONVERSATION_TYPING_STATUSES : TYPING_STATUSES
+      );
 
       try {
         await sleep(TYPING_DELAY_MS);
 
         let result = null;
-        if (conversationalReply) {
+        if (apiQuestionReply) {
+          result = apiQuestionReply;
+        } else if (conversationalReply) {
           result = conversationalReply;
         } else if (online) {
           try {
@@ -102,7 +255,7 @@ export default function useChat({ online, showToast, onReset }) {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                query,
+                query: requestQuery,
                 enable_privacy: privacy,
                 conversation_history: historyRef.current,
                 state: currentState,
@@ -126,19 +279,30 @@ export default function useChat({ online, showToast, onReset }) {
           }
         }
 
-        if (!result) result = matchOfflineKnowledge(query);
+        if (!result) result = matchOfflineKnowledge(requestQuery);
 
         setTypingStatuses(null);
         addMessage({ type: 'bot', data: result });
         historyRef.current.push({ role: 'assistant', content: result.title || result.problem });
       } catch {
         setTypingStatuses(null);
-        addMessage({ type: 'bot', data: matchOfflineKnowledge(query) });
+        addMessage({ type: 'bot', data: matchOfflineKnowledge(requestQuery) });
       } finally {
         setSending(false);
       }
     },
-    [sending, input, privacy, addMessage, currentState, caseSummary, language, online]
+    [
+      sending,
+      input,
+      privacy,
+      addMessage,
+      currentState,
+      caseSummary,
+      language,
+      online,
+      apiFlow,
+      websiteFlow,
+    ]
   );
 
   const selectOption = useCallback(
@@ -192,6 +356,10 @@ export default function useChat({ online, showToast, onReset }) {
     if (historyRef.current.length >= 2) {
       historyRef.current = historyRef.current.slice(0, -2);
     }
+    setApiFlow(null);
+    apiProblemRef.current = '';
+    setWebsiteFlow(null);
+    websiteAnswersRef.current = [];
     showToast?.('Reverted to previous step.');
   }, [showToast]);
 
@@ -201,6 +369,10 @@ export default function useChat({ online, showToast, onReset }) {
     setInput('');
     setCurrentState('UNDERSTAND_PROBLEM');
     setCaseSummary(null);
+    setApiFlow(null);
+    apiProblemRef.current = '';
+    setWebsiteFlow(null);
+    websiteAnswersRef.current = [];
     historyRef.current = [];
     setActiveSessionId(null);
     onReset?.();

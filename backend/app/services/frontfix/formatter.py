@@ -93,6 +93,17 @@ def format_diagnostic_response(diagnosis: dict | None) -> dict | None:
             "detected_framework": "Unknown / Generic JavaScript",
             "confirmed_observations": [],
         },
+        "state": diagnosis.get("state"),
+        "response_type": diagnosis.get("response_type"),
+        "greeting": diagnosis.get("greeting"),
+        "interactive_options": diagnosis.get("interactive_options", []),
+        "interactive_facet": diagnosis.get("interactive_facet"),
+        "step_number": diagnosis.get("step_number"),
+        "step_label": diagnosis.get("step_label"),
+        "can_skip": diagnosis.get("can_skip", True),
+        "verification_actions": diagnosis.get("verification_actions", []),
+        "case_summary": diagnosis.get("case_summary"),
+        "language": diagnosis.get("language"),
     })
 
     return res

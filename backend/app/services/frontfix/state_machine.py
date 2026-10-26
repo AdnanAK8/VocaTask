@@ -42,6 +42,7 @@ class CaseSummary:
     language: str = "en"
     step_number: int = 1
     max_steps: int = 3
+    active_facet: Optional[str] = None
     asked_questions: List[str] = field(default_factory=list)
     answered_facets: Dict[str, Any] = field(default_factory=dict)
     collected_answers: Dict[str, str] = field(default_factory=dict)

@@ -1752,3 +1752,120 @@
   border-color: #8b5cf6;
   transform: translateY(-1px);
 }
+
+/* =========================================================
+   SUPPORT AGENT INTERACTIVE BUBBLE (Airtel/Amazon Style)
+   ========================================================= */
+
+.support-agent-bubble {
+  max-width: 680px;
+  align-self: flex-start;
+  padding: 18px 20px;
+  background: #ffffff;
+  border: 1px solid var(--card-border);
+  border-radius: 18px;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: messageEnter 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.support-agent-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.support-agent-avatar {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #10b981, #2563eb);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.support-agent-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.support-agent-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.support-agent-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.support-agent-greeting {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.support-agent-prompt {
+  font-size: 13.5px;
+  color: #334155;
+  margin: 0;
+  line-height: 1.55;
+  white-space: pre-line;
+}
+
+.support-agent-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 12.5px;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.support-agent-source {
+  padding-top: 4px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.support-agent-source a {
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.support-agent-source a:hover {
+  text-decoration: underline;
+}
+
+/* Resolution celebration card */
+.resolved-card {
+  max-width: 680px;
+  align-self: flex-start;
+  padding: 20px;
+  background: linear-gradient(135deg, #f0fdf4, #ffffff);
+  border: 1px solid #bbf7d0;
+  border-radius: 18px;
+  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}

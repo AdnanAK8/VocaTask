@@ -87,6 +87,35 @@ class DiagnosticEngine:
         "it happens randomly",
         "yes, i see an error",
         "no errors are visible",
+        "api request is failing",
+        "api request is failing.",
+        "my frontend cannot connect to the backend",
+        "my frontend cannot connect to the backend.",
+        "i'm getting a 400, 401, 403, 404, or 500 error",
+        "i'm getting a 400, 401, 403, 404, or 500 error.",
+        "i'm getting a cors error",
+        "i'm getting a cors error.",
+        "the api returns unexpected data",
+        "the api returns unexpected data.",
+        "the request keeps loading or times out",
+        "the request keeps loading or times out.",
+        "i'm not sure",
+        "i'm not sure.",
+        "react or another frontend application",
+        "react or another frontend application (fetch / axios)",
+        "node.js, express, or backend service",
+        "fastapi or python backend",
+        "postman or curl works, but frontend fails",
+        "the website shows a blank screen.",
+        "the website is loading very slowly.",
+        "i see an error message on screen.",
+        "some buttons or features are not working.",
+        "the website is completely unavailable (network/server down).",
+        "div or element refuses to center horizontally or vertically",
+        "element renders behind other content (z-index stacking issue)",
+        "text or container causes unwanted horizontal scrolling / overflow",
+        "layout breaks on mobile viewports (responsive styling issue)",
+        "styles / css classes are not applying or being overridden",
     }
 
     def __init__(self, options: dict | None = None):
@@ -117,14 +146,22 @@ class DiagnosticEngine:
         vague_phrases = [
             "app crash", "app is crash", "application is crash", "app crashing", "crashing",
             "page is blank", "blank screen", "screen is blank", "screen blank", "white screen",
+            "black screen", "completely black", "screen is black", "page is black",
             "not working", "doesn't work", "kuch kaam nahi", "chal nahi raha", "ruk gaya",
-            "crash ho raha", "crash ho rahi", "502", "error 502", "bad gateway", "proxy error"
+            "crash ho raha", "crash ho rahi", "502", "error 502", "bad gateway", "proxy error",
+            "request is failing", "api request", "cannot connect", "keeps loading", "times out",
+            "unexpected data", "failing", "not sure", "other problem", "something else",
+            "backend service", "postman", "what happened", "what to do", "website open",
+            "opened my website", "opened website", "nothing happens", "stopped working",
+            "freezing", "app freezes", "screen freezes", "page hangs", "app hangs"
         ]
         has_specific_error = any(kw in trimmed for kw in [
             "typeerror", "referenceerror", "syntaxerror", "uncaught", "cors",
             "nan", "cls", "map", "hook", "useeffect", "usestate",
             "z-index", "flex", "flexbox", "overflow", "ellipsis", "grid", "align", "center",
-            "networkerror", "hydration", "re-render", "rerender", "key prop"
+            "networkerror", "hydration", "re-render", "rerender", "key prop",
+            "econnrefused", "connect econ", "controlled", "uncontrolled", "sticky",
+            "quota", "mixed content", "csp", "abortcontroller", "wasm", "webassembly"
         ])
 
         if any(vp in trimmed for vp in vague_phrases) and not has_specific_error:
@@ -265,6 +302,7 @@ class DiagnosticEngine:
                 "matched": True,
                 "generated_by": "state_machine",
                 "model_label": "🎉 Resolution Summary",
+                "response_type": "resolved",
                 "state": DiagnosticState.RESOLVED.value,
                 "case_summary": case.to_dict(),
                 "language": active_lang,
@@ -299,6 +337,7 @@ class DiagnosticEngine:
                 "matched": False,
                 "generated_by": "state_machine",
                 "model_label": "🔬 Deep Troubleshooting",
+                "response_type": "fallback",
                 "state": DiagnosticState.ESCALATE_OR_FALLBACK.value,
                 "case_summary": case.to_dict(),
                 "language": active_lang,
@@ -446,23 +485,54 @@ class DiagnosticEngine:
                 "redactions_count": redactions_count,
             }
 
+        # Record answer to active facet from previous question turn
+        if case.active_facet and action != "skip_questions":
+            case.record_answer(case.active_facet, clean_text)
+            case.active_facet = None
+
         # ---------------------------------------------------------
         # 1. Check for insufficient/vague input (COLLECT_CONTEXT)
         # ---------------------------------------------------------
-        if self.is_insufficient_query(clean_text) and action != "skip_questions":
+        has_solid_evidence = bool(
+            evidence.get("stack")
+            or evidence.get("fileLocation")
+            or evidence.get("errorSignature")
+            or len(clean_text.split("\n")) > 2
+            or any(kw in clean_text.lower() for kw in [
+                "502 bad gateway", "econnrefused", "typeerror:", "referenceerror:", "syntaxerror:",
+                "404 not found", "500 internal server", "cors policy blocked:", "cannot read properties of undefined (reading 'map')"
+            ])
+            or (case.data_source and case.reproduction_trigger)
+            or case.step_number > case.max_steps
+        )
+
+        should_collect_context = (
+            not has_solid_evidence
+            and (self.is_insufficient_query(clean_text) or bool(case.problem_category))
+            and action != "skip_questions"
+        )
+
+        if should_collect_context:
             followup_data = self.generate_context_aware_followup(clean_text, evidence, active_lang)
             interactive_q = QuestionGenerator.generate_interactive_followup(clean_text, case, evidence, active_lang)
             options = interactive_q.get("options", [])
             facet = interactive_q.get("facet")
+            greeting = interactive_q.get("greeting", "")
             question_text = interactive_q.get("question") or followup_data.get("follow_up_prompt", "")
+            response_type = interactive_q.get("response_type", "follow_up_question")
 
             step_num = min(case.step_number, 3)
             step_label = f"Step {step_num} of 3"
 
+            # Set active facet for next turn answer recording
+            if facet:
+                case.active_facet = facet
+
             return {
                 "matched": False,
-                "generated_by": "knowledge_base",
-                "model_label": "🔍 Clarification Inquiry",
+                "generated_by": "state_machine",
+                "model_label": "💬 FrontFix Support Assistant",
+                "response_type": response_type,
                 "state": DiagnosticState.COLLECT_CONTEXT.value,
                 "case_summary": case.to_dict(),
                 "language": active_lang,
@@ -471,7 +541,9 @@ class DiagnosticEngine:
                 "step_number": step_num,
                 "step_label": step_label,
                 "category": followup_data["category"],
-                "title": followup_data["title"],
+                "title": "FrontFix AI Support",
+                "greeting": greeting,
+                "message": f"{greeting}\n\n{question_text}" if greeting else question_text,
                 "problem": followup_data["problem"],
                 "likely_cause": followup_data["likely_cause"],
                 "fix_steps": followup_data["fix_steps"],
@@ -481,6 +553,7 @@ class DiagnosticEngine:
                 "interactive_options": options,
                 "interactive_facet": facet,
                 "can_skip": True,
+                "allow_text_input": True,
                 "verification_actions": [],
                 "confirmation_prompt": "Did this guidance help clarify what to share?",
                 "source": followup_data["source"],
@@ -602,6 +675,7 @@ class DiagnosticEngine:
                 "matched": True,
                 "generated_by": generated_by,
                 "model_label": model_label,
+                "response_type": "solution",
                 "state": DiagnosticState.PRESENT_SOLUTION.value,
                 "case_summary": case.to_dict(),
                 "language": active_lang,
@@ -657,7 +731,7 @@ class DiagnosticEngine:
         if file_loc and file_loc.get("file"):
             file_hint = f"{file_loc['file']}:{file_loc['line']}" if file_loc.get("line") else file_loc["file"]
 
-        if self.llm_service.is_available():
+        if self.llm_service.is_available() and (has_solid_evidence or action == "skip_questions" or case.step_number >= case.max_steps):
             try:
                 llm_diag = await self.llm_service.diagnose_arbitrary_error(
                     clean_text,
@@ -676,6 +750,7 @@ class DiagnosticEngine:
                         "matched": False,
                         "generated_by": llm_diag.get("provider", "llm"),
                         "model_label": f"⚡ Dynamic AI Diagnosis ({provider_name})",
+                        "response_type": "solution",
                         "state": DiagnosticState.PRESENT_SOLUTION.value,
                         "case_summary": case.to_dict(),
                         "language": active_lang,
@@ -723,6 +798,7 @@ class DiagnosticEngine:
             "matched": False,
             "generated_by": "knowledge_base",
             "model_label": "📚 General Diagnostics",
+            "response_type": "fallback",
             "state": DiagnosticState.ESCALATE_OR_FALLBACK.value,
             "case_summary": case.to_dict(),
             "language": active_lang,

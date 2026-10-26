@@ -1,10 +1,9 @@
-const PROD_API_URL = window.__FRONTFIX_API_URL__ || '';
 const LOCAL_API_URL = window.__FRONTFIX_API_URL__ || '';
 
 export function resolveBackendUrl() {
   if (window.__FRONTFIX_API_URL__) return window.__FRONTFIX_API_URL__;
 
-  const { hostname, protocol, port, origin } = window.location;
+  const { hostname, protocol, origin } = window.location;
 
   // Local dev: Vite proxies /api to FastAPI backend on port 8000
   if (!hostname || hostname === 'localhost' || hostname === '127.0.0.1' || protocol === 'file:') {

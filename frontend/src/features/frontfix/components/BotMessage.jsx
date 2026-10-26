@@ -68,15 +68,125 @@ export default function BotMessage({
     );
   }
 
-  const isCollecting = data.state === 'COLLECT_CONTEXT';
-  const badgeInfo = data.state ? getStateBadgeInfo(data.state) : null;
+  const isResolved = data.response_type === 'resolved' || data.state === 'RESOLVED';
+  const isQuestionTurn =
+    !isResolved &&
+    (data.response_type === 'follow_up_question' ||
+      data.response_type === 'request_error_details' ||
+      data.response_type === 'request_code_or_logs' ||
+      data.state === 'COLLECT_CONTEXT' ||
+      data.state === 'UNDERSTAND_PROBLEM');
 
-  // Build the list of rows first so each gets a sequential reveal index.
+  // 1. Render Interactive Question / Troubleshooting Support Turn
+  if (isQuestionTurn) {
+    return (
+      <div className="chat-bubble-bot support-agent-bubble">
+        <div className="support-agent-header">
+          <div className="support-agent-avatar" aria-hidden="true">
+            ✦
+          </div>
+          <div className="support-agent-meta">
+            <span className="support-agent-name">FrontFix Support Assistant</span>
+            {data.step_label && <span className="step-count-badge">{data.step_label}</span>}
+            <span className="state-badge state-collect">Troubleshooting</span>
+          </div>
+        </div>
+
+        <div className="support-agent-content">
+          {data.greeting && (
+            <p className="support-agent-greeting">{data.greeting}</p>
+          )}
+
+          <div className="support-agent-prompt">
+            <p style={{ whiteSpace: 'pre-line' }}>
+              {data.follow_up_question || data.follow_up_prompt || data.message || data.problem}
+            </p>
+          </div>
+
+          {data.extra_tips && (
+            <div className="support-agent-tip">
+              <span className="tip-icon">💡</span>
+              <span style={{ whiteSpace: 'pre-line' }}>{data.extra_tips}</span>
+            </div>
+          )}
+
+          {Array.isArray(data.interactive_options) && data.interactive_options.length > 0 && (
+            <InteractiveOptions
+              options={data.interactive_options}
+              stepLabel={data.step_label}
+              canSkip={data.can_skip ?? true}
+              onSelectOption={onSelectOption}
+              onSkip={onSkipQuestions}
+              onGoBack={onGoBack}
+              onRestart={onRestart}
+            />
+          )}
+
+          {data.source && data.source.url && (
+            <div className="support-agent-source">
+              <span>Reference: </span>
+              <a href={data.source.url} target="_blank" rel="noopener noreferrer">
+                {data.source.title || 'Official Documentation'} →
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Render Resolved State
+  if (isResolved) {
+    return (
+      <div className="chat-bubble-bot resolved-card">
+        <div className="support-agent-header">
+          <div className="support-agent-avatar" style={{ background: '#10b981' }} aria-hidden="true">
+            ✓
+          </div>
+          <div className="support-agent-meta">
+            <span className="support-agent-name">FrontFix Support Assistant</span>
+            <span className="state-badge state-resolved">✅ Issue Resolved</span>
+          </div>
+        </div>
+
+        <div className="support-agent-content">
+          <p className="support-agent-greeting">🎉 Glad we could solve this together!</p>
+          <p className="support-agent-prompt">{data.problem}</p>
+
+          <div className="section-block" style={{ marginTop: '10px' }}>
+            <div className="section-label">✅ Resolution Summary</div>
+            <div className="section-content">{data.likely_cause}</div>
+          </div>
+
+          {Array.isArray(data.fix_steps) && data.fix_steps.length > 0 && (
+            <div className="fix-steps-list" style={{ marginTop: '8px' }}>
+              {data.fix_steps.map((step, idx) => (
+                <div className="fix-step-item" key={idx}>
+                  <span className="fix-step-num">Step {idx + 1}</span>
+                  <span>{typeof step === 'string' ? step.replace(/^\d+\.\s*/, '') : step}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {data.extra_tips && (
+            <div className="support-agent-tip" style={{ marginTop: '10px' }}>
+              <span className="tip-icon">💡</span>
+              <span>{data.extra_tips}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // 3. Render Solution / Diagnostic Card (PRESENT_SOLUTION, AI_DIAGNOSIS, ESCALATE_OR_FALLBACK)
+  const badgeInfo = data.state ? getStateBadgeInfo(data.state) : null;
   const rows = [];
 
   rows.push(
     <div className="bot-header">
-      <span className="category-tag">{data.category || 'Frontend Support'}</span>
+      <span className="category-tag">{data.category || 'Frontend Diagnostic'}</span>
       {data.step_label && <span className="step-count-badge">{data.step_label}</span>}
       {badgeInfo && (
         <span className={`state-badge ${badgeInfo.className}`}>{badgeInfo.label}</span>
@@ -103,34 +213,7 @@ export default function BotMessage({
     </div>
   );
 
-  if (data.follow_up_question) {
-    rows.push(
-      <div className="followup-callout">
-        <span className="followup-icon">💡</span>
-        <div>
-          <strong>Diagnostic Follow-up:</strong>
-          <p style={{ whiteSpace: 'pre-line' }}>{data.follow_up_question}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (Array.isArray(data.interactive_options) && data.interactive_options.length > 0) {
-    rows.push(
-      <InteractiveOptions
-        options={data.interactive_options}
-        stepLabel={data.step_label}
-        canSkip={data.can_skip ?? true}
-        onSelectOption={onSelectOption}
-        onSkip={onSkipQuestions}
-        onGoBack={onGoBack}
-        onRestart={onRestart}
-      />
-    );
-  }
-
-  // Only show code fixes and steps when presenting solutions, not during context gathering
-  if (!isCollecting && Array.isArray(data.fix_steps) && data.fix_steps.length > 0) {
+  if (Array.isArray(data.fix_steps) && data.fix_steps.length > 0) {
     rows.push(
       <div className="section-block">
         <div className="section-label">🛠️ Fix Steps</div>
@@ -146,7 +229,7 @@ export default function BotMessage({
     );
   }
 
-  if (!isCollecting && data.code_before && data.code_after) {
+  if (data.code_before && data.code_after) {
     rows.push(
       <DiffBlock
         fileHint={data.file_hint}
@@ -165,7 +248,7 @@ export default function BotMessage({
         onVerify={onVerifySolution}
       />
     );
-  } else if (!isCollecting && data.confirmation_prompt) {
+  } else if (data.confirmation_prompt) {
     rows.push(
       <FeedbackBar
         prompt={data.confirmation_prompt}
@@ -174,12 +257,13 @@ export default function BotMessage({
     );
   }
 
-  rows.push(
-    <div className="extra-tips-card">
-      <strong>💡 Pro Tip:</strong>{' '}
-      {data.extra_tips || 'Always verify with the official documentation linked below.'}
-    </div>
-  );
+  if (data.extra_tips) {
+    rows.push(
+      <div className="extra-tips-card">
+        <strong>💡 Pro Tip:</strong> {data.extra_tips}
+      </div>
+    );
+  }
 
   if (data.source) {
     rows.push(
