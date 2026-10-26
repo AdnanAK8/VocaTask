@@ -11,6 +11,7 @@ from app.core.rate_limit import RateLimitMiddleware
 from app.api import tasks
 from app.api import voice
 from app.api import auth
+from app.api import frontfix
 from app.services import auth_store, task_store
 
 
@@ -73,6 +74,7 @@ app.add_middleware(
 app.include_router(voice.router, prefix=settings.API_V1_STR)
 app.include_router(tasks.router, prefix=settings.API_V1_STR)
 app.include_router(auth.router, prefix=settings.API_V1_STR)
+app.include_router(frontfix.router, prefix=settings.API_V1_STR)
 
 
 @app.get("/health", tags=["Health"])
@@ -91,9 +93,11 @@ async def health_check():
 @app.get("/", tags=["Root"])
 async def root():
     return {
-        "message": "Welcome to VoiceTasks AI API",
+        "status": "online",
+        "message": "Welcome to VoiceTasks & FrontFix AI API",
         "docs": "/docs",
-        "health": "/health"
+        "health": "/health",
+        "frontfix": "/api/frontfix/health"
     }
 
 handler = Mangum(app)

@@ -10,14 +10,33 @@ frontend/.env.*
 !backend/.env.example
 !frontend/.env.example
 
+# Security & Keys
+*.pem
+
+# Databases & local stores
+*.db
 backend/*.db
+
+# Python caches and virtual environments
+__pycache__/
 backend/__pycache__/
 backend/**/__pycache__/
-backend/venv/
-backend/.venv/
-frontend/node_modules/
-frontend/dist/
-__pycache__/
 *.py[cod]
+.pytest_cache/
+backend/.pytest_cache/
 venv/
 .venv/
+backend/venv/
+backend/.venv/
+
+# Build and Lambda artifacts
+build_lambda/
+package/
+backend/build_lambda/
+backend/package/
+
+# Frontend dependencies and bundles
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/

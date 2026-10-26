@@ -61,22 +61,25 @@ The app interprets the spoken input, normalizes dates and times, classifies the 
 
 ```mermaid
 flowchart TD
-    subgraph Client[Client Device]
-        UI[React + Vite PWA UI]
-        MIC[Browser Microphone + Speech Input]
-        REVIEW[Task Review / Confirm Modal]
+    subgraph Client["Client PWA (React + Vite)"]
+        TASKS["Tasks Feature (Voice Recorder / Task List / Modals)"]
+        FRONTFIX_UI["FrontFix Feature (AI Diagnostic Drawer & Chat)"]
+        AUTH_UI["Auth Feature (Login / Profile Gate)"]
     end
 
-    subgraph Backend[FastAPI Backend]
-        API[Voice Processing API]
-        PARSER[Multilingual Task Parser]
-        DB[(PostgreSQL)]
+    subgraph Backend["Unified FastAPI Backend (:8000)"]
+        API_TASKS["/api/tasks & /api/voice"]
+        API_FRONTFIX["/api/frontfix (Diagnostic Engine & RAG)"]
+        API_AUTH["/api/auth (User Session Store)"]
+        DB[("PostgreSQL / SQLite")]
+        KB[("Knowledge Base (knowledge.json)")]
     end
 
-    MIC -->|Audio / transcript| API
-    API --> PARSER
-    PARSER -->|Structured task JSON| REVIEW
-    REVIEW -->|Save task| DB
+    TASKS --> API_TASKS
+    FRONTFIX_UI --> API_FRONTFIX
+    AUTH_UI --> API_AUTH
+    API_TASKS --> DB
+    API_FRONTFIX --> KB
 ```
 
 ---
@@ -253,28 +256,47 @@ This is a realistic prototype architecture, with known limitations explicitly do
 ## 📁 Project structure
 
 ```text
-VocaTask/
+react-js-learning/
 ├── backend/
 │   ├── app/
 │   │   ├── api/
-│   │   ├── core/
-│   │   ├── schemas/
+│   │   │   ├── auth.py             # Auth endpoints
+│   │   │   ├── tasks.py            # Task CRUD endpoints
+│   │   │   ├── voice.py            # Voice-to-task parsing
+│   │   │   └── frontfix.py         # FrontFix AI diagnostic endpoints
+│   │   ├── core/                   # Config, DB connection, rate limiting
+│   │   ├── data/
+│   │   │   └── knowledge.json      # FrontFix diagnostic knowledge base
+│   │   ├── schemas/                # Pydantic schemas
 │   │   ├── services/
-│   │   └── main.py
-│   ├── run.py
+│   │   │   ├── auth_store.py
+│   │   │   ├── task_store.py
+│   │   │   ├── ai_parser.py
+│   │   │   └── frontfix/           # FrontFix engine, retriever, LLM, sanitizer
+│   │   └── main.py                 # FastAPI unified application
+│   ├── tests/
+│   │   ├── test_ai_parser.py
+│   │   ├── test_api_auth.py
+│   │   ├── test_api_tasks.py
+│   │   ├── test_api_frontfix.py    # FrontFix API test suite
+│   │   └── frontfix/               # FrontFix diagnostic test suite (80 tests)
 │   ├── requirements.txt
-│   ├── .env.example
-│   └── .env
+│   └── run.py
 ├── frontend/
 │   ├── public/
 │   ├── src/
+│   │   ├── features/
+│   │   │   ├── auth/               # Auth gates, profile menu, auth service
+│   │   │   ├── tasks/              # Task list, task cards, voice recorder, reminders
+│   │   │   └── frontfix/           # FrontFix AI drawer, chat stream, knowledge viewer
+│   │   ├── shared/                 # Shared header, settings, PWA banner, API client
+│   │   ├── App.tsx                 # Root application shell
+│   │   └── main.tsx
 │   ├── package.json
-│   ├── vite.config.ts
-│   └── index.html
-├── docker-compose.yml
-├── amplify.yml
-├── README.md
-└── .gitignore
+│   └── vite.config.ts
+├── docker-compose.yml              # Unified multi-container deployment
+├── run.bat                         # Unified one-click runner (:8000 & :5173)
+└── README.md
 ```
 
 ---

@@ -9,4 +9,6 @@ psycopg[binary,pool]>=3.2.0
 groq>=0.5.0
 openai>=1.14.0
 google-genai>=1.0.0
+requests>=2.31.0
 mangum
+pytest-asyncio>=0.23.0

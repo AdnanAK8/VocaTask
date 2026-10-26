@@ -2,20 +2,13 @@ import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import './App.css';
 import { Check, ChevronRight, Clock3, Pencil, Plus, Settings, Trash2, X, Mic, Download, Bell, BellOff, Sparkles } from 'lucide-react';
-import { FrontFixDrawer } from './components/FrontFixDrawer';
-import { VoiceRecorder } from './components/VoiceRecorder';
-import { TaskConfirmModal } from './components/TaskConfirmModal';
-import { InstallPwaBanner } from './components/InstallPwaBanner';
-import { SettingsModal } from './components/SettingsModal';
-import { ToastReminder } from './components/ToastReminder';
-import { useTaskReminders } from './hooks/useTaskReminders';
-import { api } from './services/api';
+import { FrontFixDrawer } from './features/frontfix';
+import { VoiceRecorder, TaskConfirmModal, useTaskReminders } from './features/tasks';
+import type { Task, ExtractedTask, TaskCreateInput, TaskUpdateInput, PriorityType, CategoryType } from './features/tasks';
+import { AuthGateDesign as AuthGate, UserProfileMenu, authService } from './features/auth';
+import type { User } from './features/auth';
+import { SettingsModal, InstallPwaBanner, ToastReminder, api } from './shared';
 import aivantaLogo from './assets/Aivanta-Logo.png';
-import type { Task, ExtractedTask, TaskCreateInput, TaskUpdateInput, PriorityType, CategoryType } from './types/task';
-import { AuthGateDesign as AuthGate } from './components/AuthGateDesign';
-import { UserProfileMenu } from './components/UserProfileMenu';
-import { authService } from './services/authService';
-import type { User } from './types/auth';
 
 interface TaskFormValues {
   title: string;
