@@ -89,6 +89,7 @@ app.include_router(frontfix.router, prefix=settings.API_V1_STR)
 
 
 @app.get("/health", tags=["Health"])
+@app.get("/api/health", tags=["Health"])
 async def health_check():
     return {
         "status": "ok",
