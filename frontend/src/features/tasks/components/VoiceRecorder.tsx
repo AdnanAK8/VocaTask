@@ -70,7 +70,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
   const maxVolumeRef = useRef<number>(0);
 
   const languages = [
-    { code: 'auto', label: '🌐 Auto-detect language' },
+    { code: 'auto', label: 'Auto Detect' },
     { code: 'en-IN', label: '🇮🇳 Hinglish / English (India)' },
     { code: 'hi-IN', label: '🇮🇳 Hindi (हिंदी)' },
     { code: 'pa-IN', label: '🌾 Punjabi (ਪੰਜਾਬੀ)' },
@@ -449,7 +449,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
         <div className={`absolute -inset-0.5 rounded-3xl bg-gradient-to-r ${isRecording ? 'from-rose-500 to-indigo-500 opacity-40 blur-xl' : 'from-indigo-500/20 to-purple-500/20 opacity-30 blur-lg'} -z-10 transition-all duration-500`} />
 
         {/* Top Bar: Status & Spoken Language Selector */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mb-4">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mb-4 sm:pr-10">
           <div className="flex items-center space-x-1.5">
             <Sparkles className="w-4 h-4 text-indigo-400" />
             <span className="text-xs font-semibold tracking-wider uppercase text-indigo-300">
@@ -458,13 +458,13 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({ onTaskExtracted, o
           </div>
 
           {/* Language Selector Dropdown */}
-          <div className="flex items-center space-x-1 bg-slate-950/70 border border-slate-800 rounded-xl px-2 py-1">
+          <div className="flex items-center space-x-1 bg-slate-950/70 border border-slate-800 rounded-xl px-1.5 py-1">
             <Globe className="w-3 h-3 text-indigo-400 flex-shrink-0" />
             <select
               value={selectedLang}
               onChange={(e) => handleLangChange(e.target.value)}
               disabled={isRecording || isProcessing}
-              className="bg-transparent text-[11px] text-slate-300 focus:outline-none cursor-pointer"
+              className="w-[88px] truncate bg-transparent text-[11px] text-slate-300 focus:outline-none cursor-pointer"
             >
               {languages.map((l) => (
                 <option key={l.code} value={l.code} className="bg-slate-900 text-slate-200">

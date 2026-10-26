@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import './App.css';
-import { Check, ChevronRight, Clock3, Pencil, Plus, Settings, Trash2, X, Mic, Download, Bell, BellOff, Sparkles } from 'lucide-react';
+import { Check, ChevronRight, Clock3, MessageCircle, Pencil, Plus, Settings, Trash2, X, Mic, Download, Bell, BellOff, Sparkles } from 'lucide-react';
 import { FrontFixDrawer } from './features/frontfix';
 import { VoiceRecorder, TaskConfirmModal, useTaskReminders } from './features/tasks';
 import type { Task, ExtractedTask, TaskCreateInput, TaskUpdateInput, PriorityType, CategoryType } from './features/tasks';
@@ -69,6 +69,7 @@ const AppContent = ({
   const [extractedTask, setExtractedTask] = useState<ExtractedTask | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [errorCount, setErrorCount] = useState<number>(() => errorTelemetry.getErrorCount());
+  const [isAssistantPromptVisible, setIsAssistantPromptVisible] = useState(true);
 
   useEffect(() => {
     return errorTelemetry.subscribe((errors) => {
@@ -92,6 +93,12 @@ const AppContent = ({
     await authService.logout();
     setCurrentUser(null);
     setTasks([]);
+  };
+
+  const openFrontFix = () => {
+    setIsAssistantPromptVisible(false);
+    setFrontFixError(errorTelemetry.getLatestError());
+    setIsFrontFixOpen(true);
   };
 
   const loadTasks = async () => {
@@ -311,17 +318,50 @@ const AppContent = ({
 
   return (
     <div className="app-shell">
-      {/* Option on the left: Pop up FrontFix Chatbot from left side */}
+      {/* Floating FrontFix chatbot launcher */}
+      {!isFrontFixOpen && isAssistantPromptVisible && (
+        <div className="frontfix-assistant-popover" role="region" aria-label="FrontFix AI invitation">
+          <button
+            className="frontfix-assistant-message"
+            onClick={openFrontFix}
+            aria-label={
+              errorCount > 0
+                ? `Chat with FrontFix about ${errorCount} detected issue${errorCount === 1 ? '' : 's'}`
+                : 'Chat with FrontFix about a problem'
+            }
+          >
+            <span className="frontfix-assistant-avatar" aria-hidden="true">👩‍💻</span>
+            <span className="frontfix-assistant-copy">
+              <span className="frontfix-assistant-title">
+                {errorCount > 0
+                  ? `I spotted ${errorCount} issue${errorCount === 1 ? '' : 's'}`
+                  : 'Hey! Need a hand?'}
+              </span>
+              <span className="frontfix-assistant-text">
+                {errorCount > 0
+                  ? 'Tell me what you’re seeing and I’ll help you fix it.'
+                  : 'Seeing errors or something not working? Chat with me and we’ll figure it out.'}
+              </span>
+              <span className="frontfix-assistant-cta">Chat with me <ChevronRight size={14} /></span>
+            </span>
+          </button>
+          <button
+            className="frontfix-assistant-dismiss"
+            onClick={() => setIsAssistantPromptVisible(false)}
+            aria-label="Dismiss FrontFix invitation"
+            title="Dismiss"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
       <button
         className={`frontfix-left-dock-btn ${errorCount > 0 ? 'has-errors' : ''}`}
-        onClick={() => {
-          setFrontFixError(errorTelemetry.getLatestError());
-          setIsFrontFixOpen(true);
-        }}
-        aria-label="Open FrontFix AI Chatbot from left"
-        title={errorCount > 0 ? `${errorCount} frontend issue(s) detected - click to fix` : 'Open FrontFix AI Diagnostic Chatbot (Pops up from left)'}
+        onClick={openFrontFix}
+        aria-label="Open FrontFix AI Chatbot"
+        title={errorCount > 0 ? `${errorCount} frontend issue(s) detected - click to fix` : 'Open FrontFix AI Diagnostic Chatbot'}
       >
-        <span className="frontfix-dock-icon">⚡</span>
+        <span className="frontfix-dock-icon"><MessageCircle size={19} strokeWidth={2.2} /></span>
         <span className="frontfix-dock-text">FrontFix AI</span>
         <span className={`frontfix-dock-badge ${errorCount > 0 ? 'has-errors' : ''}`}>
           {errorCount > 0 ? `${errorCount} ISSUE${errorCount > 1 ? 'S' : ''}` : 'CHAT'}
@@ -343,10 +383,7 @@ const AppContent = ({
         </div>
         <button
           className={`header-frontfix-btn ${errorCount > 0 ? 'has-errors' : ''}`}
-          onClick={() => {
-            setFrontFixError(errorTelemetry.getLatestError());
-            setIsFrontFixOpen(true);
-          }}
+          onClick={openFrontFix}
           aria-label="Open FrontFix AI Chatbot"
           title={errorCount > 0 ? `${errorCount} frontend error(s) intercepted - click to diagnose` : 'Open FrontFix AI Diagnostic Chatbot from left'}
         >
@@ -477,10 +514,7 @@ const AppContent = ({
         <button className="nav-add" onClick={() => setIsVoiceOpen(true)} aria-label="Add a task by voice" title="Add by voice"><Mic size={21} /></button>
         <button
           className="nav-item"
-          onClick={() => {
-            setFrontFixError(errorTelemetry.getLatestError());
-            setIsFrontFixOpen(true);
-          }}
+          onClick={openFrontFix}
           aria-label="Open FrontFix AI Chatbot"
           title="FrontFix Chatbot"
         >

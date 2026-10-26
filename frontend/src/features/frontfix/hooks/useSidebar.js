@@ -1,11 +1,11 @@
 import { useState } from 'react';
 
-export default function useSidebar() {
+export default function useSidebar(isDrawer = false) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   function toggle() {
-    if (window.matchMedia('(max-width: 800px)').matches) setMobileOpen((o) => !o);
+    if (isDrawer || window.matchMedia('(max-width: 800px)').matches) setMobileOpen((o) => !o);
     else setCollapsed((c) => !c);
   }
 

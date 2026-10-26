@@ -32,7 +32,7 @@ function formatErrorForPrompt(err) {
 export default function FrontFixApp({ onClose, isDrawer = false, initialError = null }) {
   const online = useBackendStatus();
   const { toast, showToast } = useToast();
-  const sidebar = useSidebar();
+  const sidebar = useSidebar(isDrawer);
   const chat = useChat({ online, showToast, onReset: sidebar.closeMobile });
 
   const [dismissedIds, setDismissedIds] = useState(() => new Set());
@@ -74,7 +74,10 @@ export default function FrontFixApp({ onClose, isDrawer = false, initialError = 
           collapsed={sidebar.collapsed}
           mobileOpen={sidebar.mobileOpen}
           onNewChat={chat.newChat}
-          onSelect={chat.selectSession}
+          onSelect={(session) => {
+            chat.selectSession(session);
+            sidebar.closeMobile();
+          }}
         />
         {sidebar.mobileOpen && (
           <button

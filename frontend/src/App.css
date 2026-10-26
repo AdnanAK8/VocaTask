@@ -86,11 +86,30 @@ body {
   background: rgba(250, 247, 242, 0.94);
 }
 
+@media (min-width: 701px) {
+  .header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .header-frontfix-btn {
+    justify-self: center;
+    margin-left: 0;
+    white-space: nowrap;
+  }
+
+  .header-actions {
+    min-width: 0;
+  }
+}
+
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
   text-decoration: none;
+  min-width: 0;
 }
 
 .header-actions {
@@ -1505,9 +1524,13 @@ select:focus-visible {
 
 .voice-dialog>.voice-close {
   position: absolute;
+  display: grid;
+  place-items: center;
   z-index: 30;
-  top: 14px;
-  right: 14px;
+  top: 12px;
+  right: 12px;
+  padding: 0;
+  line-height: 0;
 }
 
 .voice-dialog>div {
