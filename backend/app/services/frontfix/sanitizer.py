@@ -6,7 +6,7 @@ JWT_REGEX = re.compile(
     re.IGNORECASE,
 )
 API_KEY_REGEX = re.compile(
-    r"(sk-[A-Za-z0-9]{20,}|gh[pousr]-[A-Za-z0-9]{36,}|AKIA[0-9A-Z]{16}|ai_key_[a-zA-Z0-9]{24,}|AIza[0-9A-Za-z\-_]{35})",
+    r"(sk-[A-Za-z0-9]{20,}|gh[pousr]-[A-Za-z0-9]{36,}|AKIA[0-9A-Z]{16}|ai_key_[a-zA-Z0-9]{24,}|AIza[0-9A-Za-z\-_]{25,})",
     re.IGNORECASE,
 )
 PASSWORD_REGEX = re.compile(

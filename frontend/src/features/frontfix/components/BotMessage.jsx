@@ -2,8 +2,41 @@ import StreamLine from './StreamLine.jsx';
 import EvidenceBox from './EvidenceBox.jsx';
 import DiffBlock from './DiffBlock.jsx';
 import FeedbackBar from './FeedbackBar.jsx';
+import InteractiveOptions from './InteractiveOptions.jsx';
+import VerificationActions from './VerificationActions.jsx';
 
-export default function BotMessage({ data, onToast, onReveal }) {
+function getStateBadgeInfo(state) {
+  switch (state) {
+    case 'UNDERSTAND_PROBLEM':
+      return { label: '🔍 Clarifying Issue', className: 'state-understand' };
+    case 'COLLECT_CONTEXT':
+      return { label: '📋 Gathering Context', className: 'state-collect' };
+    case 'SEARCH_KNOWLEDGE_BASE':
+    case 'EVALUATE_EVIDENCE':
+      return { label: '📚 Knowledge Match', className: 'state-search' };
+    case 'AI_DIAGNOSIS':
+      return { label: '🤖 AI Diagnostic', className: 'state-ai' };
+    case 'PRESENT_SOLUTION':
+      return { label: '💡 Solution Proposed', className: 'state-solution' };
+    case 'VERIFY_SOLUTION':
+      return { label: '🧪 Awaiting Verification', className: 'state-verify' };
+    case 'RESOLVED':
+      return { label: '✅ Issue Resolved', className: 'state-resolved' };
+    case 'ESCALATE_OR_FALLBACK':
+      return { label: '⚠️ Escalated / Fallback', className: 'state-escalate' };
+    default:
+      return null;
+  }
+}
+
+export default function BotMessage({
+  data,
+  onToast,
+  onReveal,
+  onSelectOption,
+  onSkipQuestions,
+  onVerifySolution,
+}) {
   if (data.conversational) {
     return (
       <div className="chat-bubble-bot conversational-reply">
@@ -11,10 +44,26 @@ export default function BotMessage({ data, onToast, onReveal }) {
         <div className="conversation-copy">
           <div className="conversation-title">{data.title}</div>
           <p>{data.problem}</p>
+          {Array.isArray(data.interactive_options) && data.interactive_options.length > 0 && (
+            <InteractiveOptions
+              options={data.interactive_options}
+              canSkip={data.can_skip ?? true}
+              onSelectOption={onSelectOption}
+              onSkip={onSkipQuestions}
+            />
+          )}
+          {Array.isArray(data.verification_actions) && data.verification_actions.length > 0 && (
+            <VerificationActions
+              actions={data.verification_actions}
+              onVerify={onVerifySolution}
+            />
+          )}
         </div>
       </div>
     );
   }
+
+  const badgeInfo = data.state ? getStateBadgeInfo(data.state) : null;
 
   // Build the list of rows first so each gets a sequential reveal index.
   const rows = [];
@@ -22,6 +71,9 @@ export default function BotMessage({ data, onToast, onReveal }) {
   rows.push(
     <div className="bot-header">
       <span className="category-tag">{data.category || 'Frontend Support'}</span>
+      {badgeInfo && (
+        <span className={`state-badge ${badgeInfo.className}`}>{badgeInfo.label}</span>
+      )}
       <span className="provenance-tag ai-gen">✨ Verified Frontend Diagnostic</span>
     </div>
   );
@@ -49,10 +101,21 @@ export default function BotMessage({ data, onToast, onReveal }) {
       <div className="followup-callout">
         <span className="followup-icon">💡</span>
         <div>
-          <strong>Missing Detail for Exact Fix:</strong>
+          <strong>Diagnostic Follow-up:</strong>
           <p>{data.follow_up_question}</p>
         </div>
       </div>
+    );
+  }
+
+  if (Array.isArray(data.interactive_options) && data.interactive_options.length > 0) {
+    rows.push(
+      <InteractiveOptions
+        options={data.interactive_options}
+        canSkip={data.can_skip ?? true}
+        onSelectOption={onSelectOption}
+        onSkip={onSkipQuestions}
+      />
     );
   }
 
@@ -64,7 +127,7 @@ export default function BotMessage({ data, onToast, onReveal }) {
           {data.fix_steps.map((step, idx) => (
             <div className="fix-step-item" key={idx}>
               <span className="fix-step-num">Step {idx + 1}</span>
-              <span>{step.replace(/^\d+\.\s*/, '')}</span>
+              <span>{typeof step === 'string' ? step.replace(/^\d+\.\s*/, '') : step}</span>
             </div>
           ))}
         </div>
@@ -80,6 +143,15 @@ export default function BotMessage({ data, onToast, onReveal }) {
         before={data.code_before}
         after={data.code_after}
         onCopy={onToast}
+      />
+    );
+  }
+
+  if (Array.isArray(data.verification_actions) && data.verification_actions.length > 0) {
+    rows.push(
+      <VerificationActions
+        actions={data.verification_actions}
+        onVerify={onVerifySolution}
       />
     );
   }

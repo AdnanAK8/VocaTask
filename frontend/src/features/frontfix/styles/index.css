@@ -1368,3 +1368,216 @@
   border-bottom: 1px solid var(--card-border);
   font-style: italic;
 }
+
+
+/* =========================================================
+   INTERACTIVE MULTILINGUAL SUPPORT & STATE MACHINE STYLES
+   ========================================================= */
+
+/* State Badges */
+.state-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 12px;
+  letter-spacing: 0.2px;
+}
+.state-badge.state-understand {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+.state-badge.state-collect {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+.state-badge.state-search {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+.state-badge.state-ai {
+  background: #faf5ff;
+  color: #7e22ce;
+  border: 1px solid #e9d5ff;
+}
+.state-badge.state-solution {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+.state-badge.state-verify {
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+}
+.state-badge.state-resolved {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #86efac;
+}
+.state-badge.state-escalate {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+/* Language Selector */
+.language-selector-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.language-selector-dropdown {
+  background: #ffffff;
+  border: 1px solid var(--sidebar-border);
+  color: var(--text-main);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: 16px;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.language-selector-dropdown:hover,
+.language-selector-dropdown:focus {
+  border-color: var(--accent-teal);
+  box-shadow: 0 0 0 2px rgba(40, 107, 84, 0.15);
+}
+
+/* Interactive Options (Quick Select Chips) */
+.interactive-options-container {
+  margin-top: 10px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+}
+
+.interactive-options-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 8px;
+}
+
+.interactive-options-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.interactive-option-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid #94a3b8;
+  color: #1e293b;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  text-align: left;
+  line-height: 1.3;
+}
+
+.interactive-option-chip:hover {
+  background: #f1f5f9;
+  border-color: var(--accent-teal);
+  color: var(--accent-teal);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+}
+
+.interactive-option-chip .chip-bullet {
+  color: var(--accent-teal);
+  font-size: 14px;
+}
+
+.interactive-skip-btn {
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 4px 0;
+  display: inline-block;
+  transition: color 0.15s ease;
+}
+
+.interactive-skip-btn:hover {
+  color: #0f172a;
+}
+
+/* Solution Verification Actions */
+.verification-actions-container {
+  margin-top: 14px;
+  margin-bottom: 10px;
+  padding: 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.verification-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 10px;
+}
+
+.verification-btn-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.verification-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  border: 1px solid transparent;
+}
+
+.verify-solved-btn {
+  background: #ecfdf5;
+  color: #065f46;
+  border-color: #a7f3d0;
+}
+
+.verify-solved-btn:hover {
+  background: #d1fae5;
+  border-color: #34d399;
+  transform: translateY(-1px);
+}
+
+.verify-broken-btn {
+  background: #fef2f2;
+  color: #991b1b;
+  border-color: #fecaca;
+}
+
+.verify-broken-btn:hover {
+  background: #fee2e2;
+  border-color: #f87171;
+  transform: translateY(-1px);
+}

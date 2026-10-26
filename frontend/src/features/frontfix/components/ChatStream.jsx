@@ -4,7 +4,14 @@ import BotMessage from './BotMessage.jsx';
 import LogSummary from './LogSummary.jsx';
 import TypingIndicator from './TypingIndicator.jsx';
 
-export default function ChatStream({ messages, typingStatuses, onToast }) {
+export default function ChatStream({
+  messages,
+  typingStatuses,
+  onToast,
+  onSelectOption,
+  onSkipQuestions,
+  onVerifySolution,
+}) {
   const endRef = useRef(null);
 
   const scrollToEnd = useCallback(() => {
@@ -19,7 +26,17 @@ export default function ChatStream({ messages, typingStatuses, onToast }) {
         if (m.type === 'user') return <UserMessage key={m.id} text={m.text} />;
         if (m.type === 'log')
           return <LogSummary key={m.id} filename={m.filename} analysis={m.analysis} onReveal={scrollToEnd} />;
-        return <BotMessage key={m.id} data={m.data} onToast={onToast} onReveal={scrollToEnd} />;
+        return (
+          <BotMessage
+            key={m.id}
+            data={m.data}
+            onToast={onToast}
+            onReveal={scrollToEnd}
+            onSelectOption={onSelectOption}
+            onSkipQuestions={onSkipQuestions}
+            onVerifySolution={onVerifySolution}
+          />
+        );
       })}
       {typingStatuses && <TypingIndicator statuses={typingStatuses} />}
       <div ref={endRef} />

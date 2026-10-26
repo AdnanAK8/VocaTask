@@ -58,8 +58,11 @@ async def _handle_diagnose(request: Request):
         return JSONResponse(status_code=400, content={"detail": "Invalid request body."})
 
     query = body.get("query")
-    if not query or not isinstance(query, str) or not query.strip():
+    action = body.get("action")
+    if (not query or not isinstance(query, str) or not query.strip()) and not action:
         return JSONResponse(status_code=400, content={"detail": "Query cannot be empty."})
+    if not query:
+        query = action or ""
 
     conversation_history = body.get("conversation_history")
     if conversation_history is not None and not isinstance(conversation_history, list):
@@ -72,6 +75,9 @@ async def _handle_diagnose(request: Request):
     stack = body.get("stack", "")
     framework = body.get("framework")
     source = body.get("source", "user_pasted")
+    state = body.get("state")
+    case_summary = body.get("case_summary")
+    language = body.get("language")
 
     context = {
         "stack": stack,
@@ -79,7 +85,16 @@ async def _handle_diagnose(request: Request):
         "source": source,
     }
 
-    diagnosis = await engine.diagnose(query, enable_privacy, conversation_history, context)
+    diagnosis = await engine.diagnose(
+        user_input=query,
+        enable_privacy=enable_privacy,
+        conversation_history=conversation_history,
+        context=context,
+        state=state,
+        case_summary=case_summary,
+        language=language,
+        action=action,
+    )
     formatted = format_diagnostic_response(diagnosis)
 
     return {

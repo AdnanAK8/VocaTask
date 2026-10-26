@@ -1,6 +1,14 @@
 import { StarIcon, DocIcon } from './Icons.jsx';
+import LanguageSelector from './LanguageSelector.jsx';
 
-export default function Header({ online, onToggleSidebar, onNewChat, onClose }) {
+export default function Header({
+  online,
+  onToggleSidebar,
+  onNewChat,
+  onClose,
+  language = 'auto',
+  onLanguageChange,
+}) {
   return (
     <header className="top-header">
       <div className="header-left">
@@ -23,6 +31,11 @@ export default function Header({ online, onToggleSidebar, onNewChat, onClose }) 
       </div>
 
       <div className="header-right">
+        <LanguageSelector
+          currentLanguage={language}
+          onLanguageChange={onLanguageChange}
+        />
+
         <div className={`status-pill-offline${online ? ' online' : ''}`} id="status-pill">
           <span className="status-indicator-dot"></span>
           <span id="status-text">{online ? 'Connected' : 'Offline Mode'}</span>

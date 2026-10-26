@@ -6,6 +6,29 @@ from .evidence import EvidenceService
 
 logger = logging.getLogger("frontfix_llm")
 
+MASTER_SYSTEM_PROMPT = """You are FrontFix AI, an experienced software troubleshooting assistant specializing in frontend development, JavaScript, TypeScript, React, Vite, web APIs, browser errors, and related development problems.
+
+Your job is to identify the most likely cause of a technical issue and guide the user toward a safe, practical resolution.
+
+First, understand the problem and review the evidence collected during the conversation. If important information is missing, ask a small number of relevant follow-up questions. Do not ask questions whose answers are already available.
+
+Use retrieved knowledge-base results when they are relevant and sufficiently reliable. If no suitable match exists, analyze the issue using your own capabilities and the provided evidence.
+
+Never fabricate a retrieved result, source, test result, file path, or successful verification. Do not claim that code has been executed or tested unless the system actually performed that action.
+
+Separate confirmed facts from assumptions and hypotheses. If several causes are possible, rank the most plausible ones and explain what evidence would distinguish them.
+
+Respond in the user's preferred language ({target_language}). Preserve programming syntax, error messages, commands, filenames, and technical identifiers.
+CRITICAL SAFETY RULE: Never translate code syntax, HTML tags, variable names, CLI commands (e.g. npm run dev), or file paths. They must remain in pure English/ASCII.
+
+Give the simplest safe fix first. Explain why it works, show the relevant code changes, and provide verification steps.
+
+If the problem remains unclear, continue troubleshooting instead of presenting speculation as certainty.
+
+Do not request passwords, private keys, access tokens, or other secrets. Recommend redacting sensitive information from logs and code.
+
+Your goal is not merely to produce an answer. Your goal is to help the user understand the problem, apply a suitable fix, and confirm whether the issue has been resolved."""
+
 
 class LLMService:
     def __init__(self, custom_config: dict | None = None):
@@ -52,6 +75,7 @@ class LLMService:
         retrieved_item: dict,
         conversation_history: list | None = None,
         evidence: dict | None = None,
+        target_language: str = "en",
     ) -> dict:
         """Generates a grounded RAG response based on canonical knowledge item and evidence."""
         if not self.is_available():
@@ -96,18 +120,18 @@ class LLMService:
                 f"- Observations: {'; '.join(evidence.get('observations', []))}\n\n"
             )
 
+        system_instruction = MASTER_SYSTEM_PROMPT.format(target_language=target_language)
+
         prompt = (
-            "You are FrontFix AI, an expert technical support engineer (Team B: Frontend Support). "
-            "A web developer pasted an error or asked for technical help. "
-            "Explain the issue clearly and provide step-by-step fix instructions. "
-            "IMPORTANT GUIDELINES:\n"
+            f"{system_instruction}\n\n"
+            "TASK INSTRUCTIONS:\n"
             "1. NEVER make unsupported assumptions. If no framework was detected, do NOT assume React. Treat as standard JavaScript / Web platform unless evidence indicates otherwise.\n"
             "2. NEVER invent file names, line numbers, or API responses. Only reference files and lines if present in the confirmed evidence.\n"
             "3. Separate confirmed observations from likely causes. Rank likely causes instead of stating guesses as fact.\n"
             "4. If a proposed fix is a general pattern, explicitly explain that it is an illustrative example.\n"
             "5. Output clean, unescaped literal code (no HTML entities like &lt; or &gt;).\n"
             "6. Ground your answer in the CANONICAL KNOWLEDGE BASE ARTICLE below.\n"
-            "7. Return ONLY a valid raw JSON object (no markdown backticks, no wrapper):\n"
+            "7. Return ONLY a valid raw JSON object:\n"
             "{\n"
             '  "problem": "Clear 1-2 sentence description of confirmed problem",\n'
             '  "likely_cause": "Ranked explanation of most likely causes based on evidence",\n'
@@ -167,6 +191,7 @@ class LLMService:
         user_query: str,
         conversation_history: list | None = None,
         evidence: dict | None = None,
+        target_language: str = "en",
     ) -> dict | None:
         """
         Dynamically diagnoses ANY arbitrary uncatalogued frontend error using available LLMs.
@@ -182,8 +207,11 @@ class LLMService:
             ln = evidence["fileLocation"].get("line", "")
             file_loc = f"{f}:{ln}" if ln else f
 
+        system_instruction = MASTER_SYSTEM_PROMPT.format(target_language=target_language)
+
         prompt = (
-            "You are FrontFix AI, an elite frontend diagnostics engineer.\n"
+            f"{system_instruction}\n\n"
+            "TASK INSTRUCTIONS:\n"
             "A developer encountered a real frontend runtime error, exception, or UI issue.\n"
             "Analyze the error query, stack trace, and context, then return a comprehensive fix in JSON format.\n"
             f"Detected Framework/Runtime: {framework}\n"
@@ -261,161 +289,95 @@ class LLMService:
                         ),
                     )
                     if resp and resp.text:
-                        return resp.text.strip()
+                        return resp.text
                 except Exception:
                     continue
         except Exception:
             pass
 
-        # Try legacy model wrapper
+        # Fallback to legacy google.generativeai
         model = self._get_genai_model()
-        if model:
-            try:
-                resp = model.generate_content(prompt)
-                return resp.text or ""
-            except Exception:
-                pass
-
-        # Native REST fallback
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.gemini_model}:generateContent?key={self.gemini_api_key}"
-            res = requests.post(
-                url,
-                json={
-                    "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {
-                        "temperature": 0.1,
-                        "responseMimeType": "application/json",
-                    },
-                },
-                timeout=8.0,
-            )
-            if res.status_code == 200:
-                data = res.json()
-                return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-        except Exception:
-            pass
-        return None
+        if not model:
+            return None
+        response = model.generate_content(prompt)
+        return response.text if response else None
 
     def _call_groq(self, prompt: str) -> str | None:
-        if not self.groq_api_key:
-            return None
         try:
-            res = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.groq_api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": "llama-3.3-70b-versatile",
-                    "messages": [
-                        {"role": "system", "content": "You are a senior frontend diagnostics engineer returning valid JSON."},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "temperature": 0.1,
-                    "response_format": {"type": "json_object"},
-                },
-                timeout=8.0,
+            from groq import Groq
+            client = Groq(api_key=self.groq_api_key)
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": "You are FrontFix AI, an expert frontend technical support engineer. Always return strictly valid JSON conforming to the requested schema."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.1,
+                response_format={"type": "json_object"},
             )
-            if res.status_code == 200:
-                data = res.json()
-                return data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        except Exception:
-            pass
-        return None
+            return response.choices[0].message.content
+        except Exception as exc:
+            logger.warning("Groq client call error: %s", exc)
+            return None
 
     def _call_openai(self, prompt: str) -> str | None:
         url = f"{self.openai_base_url}/chat/completions"
-        try:
-            res = requests.post(
-                url,
-                headers={
-                    "Authorization": f"Bearer {self.openai_api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": self.openai_model,
-                    "messages": [
-                        {"role": "system", "content": "You are a frontend engineering assistant returning valid JSON."},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "temperature": 0.1,
-                    "response_format": {"type": "json_object"},
-                },
-                timeout=8.0,
-            )
-            if res.status_code == 200:
-                data = res.json()
-                return data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        except Exception:
-            pass
+        headers = {
+            "Authorization": f"Bearer {self.openai_api_key}",
+            "Content-Type": "application/json",
+        }
+        body = {
+            "model": self.openai_model,
+            "messages": [
+                {"role": "system", "content": "You are FrontFix AI, an expert frontend technical support engineer. Always return strictly valid JSON conforming to the requested schema."},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.2,
+            "response_format": {"type": "json_object"},
+        }
+        resp = requests.post(url, headers=headers, json=body, timeout=8)
+        if resp.status_code == 200:
+            return resp.json()["choices"][0]["message"]["content"]
         return None
 
     def _parse_json_response(self, text: str) -> dict | None:
-        if not text or not isinstance(text, str):
+        if not text:
             return None
-        cleaned = text.strip()
-        if cleaned.startswith("```json"):
-            cleaned = cleaned[7:]
-        elif cleaned.startswith("```"):
-            cleaned = cleaned[3:]
-        if cleaned.endswith("```"):
-            cleaned = cleaned[:-3]
-        cleaned = cleaned.strip()
-
         try:
-            parsed = json.loads(cleaned)
-            if isinstance(parsed, dict):
-                return parsed
+            return json.loads(text.strip())
         except Exception:
-            pass
+            import re
+            m = re.search(r"\{.*\}", text, re.DOTALL)
+            if m:
+                try:
+                    return json.loads(m.group(0))
+                except Exception:
+                    pass
         return None
 
-    def _validate_schema(self, data: dict | None, fallback_item: dict | None = None) -> dict | None:
-        if not data or not isinstance(data, dict):
+    def _validate_schema(self, parsed: dict | None, retrieved_item: dict | None = None) -> dict | None:
+        if not parsed or not isinstance(parsed, dict):
             return None
-
-        problem = str(data.get("problem", "")).strip()
-        likely_cause = str(data.get("likely_cause", "")).strip()
-        if not problem or not likely_cause:
+        if not parsed.get("problem") or not parsed.get("likely_cause") or not parsed.get("fix_steps"):
             return None
-
-        raw_steps = data.get("fix_steps")
+        raw_steps = parsed.get("fix_steps")
         if isinstance(raw_steps, str):
-            raw_steps = [s.strip() for s in raw_steps.split("\n") if s.strip()]
-        if not isinstance(raw_steps, list) or len(raw_steps) == 0:
+            steps_list = [s.strip() for s in raw_steps.split("\n") if s.strip()]
+        elif isinstance(raw_steps, list):
+            steps_list = [str(s) for s in raw_steps if str(s).strip()]
+        else:
             return None
 
-        fix_steps = [step.strip() for step in raw_steps if isinstance(step, str) and step.strip()]
-        if len(fix_steps) == 0:
+        if not steps_list:
             return None
 
-        sources = []
-        if isinstance(data.get("sources"), list):
-            for s in data["sources"]:
-                if isinstance(s, dict) and s.get("url") and EvidenceService.validate_source_url(s["url"]):
-                    sources.append({
-                        "title": s.get("title", "Official Documentation"),
-                        "url": s["url"],
-                    })
-
-        if len(sources) == 0 and fallback_item and fallback_item.get("source_url"):
-            sources.append({
-                "title": fallback_item.get("source_title", "Official Reference"),
-                "url": fallback_item["source_url"],
-            })
-
-        corrected_code = str(data.get("code_after") or data.get("corrected_code") or "")
-
+        item = retrieved_item or {}
         return {
-            "problem": problem,
-            "likely_cause": likely_cause,
-            "fix_steps": fix_steps,
-            "code_before": str(data.get("code_before", "")),
-            "code_after": corrected_code,
-            "corrected_code": corrected_code,
-            "extra_tips": str(data.get("extra_tips", "")),
-            "sources": sources,
-            "follow_up_question": str(data["follow_up_question"]).strip() if data.get("follow_up_question") else None,
+            "problem": str(parsed.get("problem")),
+            "likely_cause": str(parsed.get("likely_cause")),
+            "fix_steps": steps_list,
+            "code_before": str(parsed.get("code_before", item.get("code_before", ""))),
+            "code_after": str(parsed.get("code_after", item.get("code_after", ""))),
+            "extra_tips": str(parsed.get("extra_tips", item.get("extra_tips", ""))),
+            "follow_up_question": parsed.get("follow_up_question"),
         }

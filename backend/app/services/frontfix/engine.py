@@ -5,6 +5,9 @@ from .sanitizer import SanitizerService
 from .history import HistoryService
 from .llm import LLMService
 from .evidence import EvidenceService
+from .state_machine import DiagnosticState, CaseSummary, DiagnosticStateMachine
+from .multilingual import MultilingualService
+from .evaluator import MatchEvaluator, QuestionGenerator
 
 
 class DiagnosticEngine:
@@ -37,6 +40,10 @@ class DiagnosticEngine:
         "frontend error",
         "bug",
         "frontend bug",
+        "mera app crash ho raha hai",
+        "page blank ho gaya",
+        "kuch kaam nahi kar raha",
+        "app crash ho rahi hai",
     }
 
     def __init__(self, options: dict | None = None):
@@ -49,12 +56,10 @@ class DiagnosticEngine:
 
     @property
     def knowledgeBase(self):
-        # Backwards compatibility property
         return self.knowledge_base
 
     @property
     def llmService(self):
-        # Backwards compatibility property
         return self.llm_service
 
     def is_insufficient_query(self, query: str) -> bool:
@@ -66,13 +71,27 @@ class DiagnosticEngine:
         if cleaned_simple in self.VAGUE_QUERIES:
             return True
 
-        technical_keywords = ["map", "cors", "404", "500", "cls", "nan", "div", "hook", "grid"]
-        if len(trimmed) < 12 and not any(kw in trimmed for kw in technical_keywords):
+        vague_phrases = [
+            "app crash", "app is crash", "application is crash", "app crashing", "crashing",
+            "page is blank", "blank screen", "white screen", "not working", "doesn't work",
+            "kuch kaam nahi", "chal nahi raha", "ruk gaya", "crash ho raha", "crash ho rahi"
+        ]
+        has_specific_error = any(kw in trimmed for kw in [
+            "typeerror", "referenceerror", "syntaxerror", "uncaught", "cors",
+            "404", "500", "nan", "cls", "map", "hook", "useeffect", "usestate",
+            "z-index", "flex", "flexbox", "overflow", "ellipsis", "grid", "align", "center",
+            "failed to fetch", "networkerror", "hydration", "re-render", "rerender", "key prop"
+        ])
+
+        if any(vp in trimmed for vp in vague_phrases) and not has_specific_error:
+            return True
+
+        if len(trimmed) < 12 and not has_specific_error:
             return True
 
         return False
 
-    def generate_context_aware_followup(self, query: str, evidence: dict | None = None) -> dict:
+    def generate_context_aware_followup(self, query: str, evidence: dict | None = None, lang: str = "en") -> dict:
         q = query.lower()
         framework = evidence.get("detectedFramework", "Unknown") if evidence else "Unknown"
 
@@ -138,8 +157,12 @@ class DiagnosticEngine:
         enable_privacy: bool = True,
         conversation_history: list | None = None,
         context: dict | None = None,
+        state: str | None = None,
+        case_summary: dict | None = None,
+        language: str | None = None,
+        action: str | None = None,
     ) -> dict:
-        """Main diagnostic method using evidence-based deduction without unsupported assumptions."""
+        """Main diagnostic method using state machine, evidence-based deduction, and multilingual support."""
         clean_text = (user_input or "").strip()
         redactions_count = 0
         ctx = context or {}
@@ -157,13 +180,108 @@ class DiagnosticEngine:
         # Extract confirmed evidence without making assumptions
         evidence = EvidenceService.analyze(clean_text, ctx)
 
-        # 1. Check for insufficient/vague input
-        if self.is_insufficient_query(clean_text):
-            followup_data = self.generate_context_aware_followup(clean_text, evidence)
+        # Hydrate CaseSummary & determine language
+        case = CaseSummary.from_dict(case_summary)
+        detected_lang = MultilingualService.detect_language(clean_text)
+        active_lang = language or case.language or detected_lang or "en"
+        if active_lang == "auto":
+            active_lang = detected_lang
+        case.language = active_lang
+
+        # Always store fully sanitized problem statement in case_summary to prevent secret leaks
+        sanitized_summary_text = SanitizerService.sanitize(clean_text)["sanitizedText"] if clean_text else ""
+        if sanitized_summary_text:
+            case.problem_statement = sanitized_summary_text
+
+        # ---------------------------------------------------------
+        # Handle Action: verify_solved (User confirms solution worked)
+        # ---------------------------------------------------------
+        if action == "verify_solved":
+            case.resolution_status = "resolved"
+            ack = MultilingualService.get_resolved_acknowledgment(active_lang)
+            return {
+                "matched": True,
+                "generated_by": "state_machine",
+                "model_label": "🎉 Resolution Summary",
+                "state": DiagnosticState.RESOLVED.value,
+                "case_summary": case.to_dict(),
+                "language": active_lang,
+                "is_followup_needed": False,
+                "is_uncertain": False,
+                "confidence_score": 1.0,
+                "confidence_level": "verified",
+                "category": "Issue Resolved",
+                "title": "Troubleshooting Complete: Issue Resolved",
+                "problem": case.problem_statement or "The technical issue has been resolved.",
+                "likely_cause": case.active_hypothesis or "Fix successfully applied and verified by developer.",
+                "fix_steps": [
+                    "1. Code modification verified working.",
+                    "2. Commit changes to version control (git).",
+                    "3. Run automated unit/e2e tests before deployment.",
+                ],
+                "extra_tips": ack,
+                "interactive_options": [],
+                "can_skip": False,
+                "verification_actions": [],
+                "confirmation_prompt": "Glad to help! Let me know if another issue arises.",
+                "redactions_count": redactions_count,
+            }
+
+        # ---------------------------------------------------------
+        # Handle Action: verify_broken (User reports solution failed)
+        # ---------------------------------------------------------
+        if action == "verify_broken":
+            case.resolution_status = "escalated"
+            esc_msg = MultilingualService.get_escalation_message(active_lang)
+            return {
+                "matched": False,
+                "generated_by": "state_machine",
+                "model_label": "🔬 Deep Troubleshooting",
+                "state": DiagnosticState.ESCALATE_OR_FALLBACK.value,
+                "case_summary": case.to_dict(),
+                "language": active_lang,
+                "is_followup_needed": True,
+                "is_uncertain": True,
+                "confidence_score": 0.5,
+                "confidence_level": "investigating",
+                "category": "Alternative Hypothesis",
+                "title": "Primary Fix Inconclusive — Deep Troubleshooting",
+                "problem": f"The initial fix did not resolve: '{case.problem_statement}'.",
+                "likely_cause": "The issue may involve secondary factors such as bundler caching, unhandled promise rejections, CORS preflight headers, or parent state synchronization.",
+                "fix_steps": [
+                    "1. Clear your browser cache and local dev server cache (e.g. restart Vite with `npm run dev -- --force`).",
+                    "2. Check the DevTools Network tab for failed 4xx/5xx requests.",
+                    "3. Paste the exact stack trace or lines around the failing component.",
+                ],
+                "extra_tips": esc_msg,
+                "interactive_options": [
+                    "I restarted Vite/Next.js with clean cache",
+                    "Network tab shows 401 Unauthorized or 404",
+                    "Network tab shows CORS preflight failure",
+                    "Paste full stack trace",
+                ],
+                "can_skip": True,
+                "verification_actions": ["verify_solved", "verify_broken"],
+                "confirmation_prompt": "Please share what happened after applying the fix.",
+                "redactions_count": redactions_count,
+            }
+
+        # ---------------------------------------------------------
+        # 1. Check for insufficient/vague input (COLLECT_CONTEXT)
+        # ---------------------------------------------------------
+        if self.is_insufficient_query(clean_text) and action != "skip_questions":
+            followup_data = self.generate_context_aware_followup(clean_text, evidence, active_lang)
+            interactive_q = QuestionGenerator.generate_interactive_followup(clean_text, case, evidence, active_lang)
+            options = interactive_q.get("options", [])
+            facet = interactive_q.get("facet")
+
             return {
                 "matched": False,
                 "generated_by": "knowledge_base",
                 "model_label": "🔍 Clarification Inquiry",
+                "state": DiagnosticState.COLLECT_CONTEXT.value,
+                "case_summary": case.to_dict(),
+                "language": active_lang,
                 "is_followup_needed": True,
                 "is_uncertain": True,
                 "category": followup_data["category"],
@@ -174,25 +292,28 @@ class DiagnosticEngine:
                 "extra_tips": followup_data["extra_tips"],
                 "follow_up_prompt": followup_data["follow_up_prompt"],
                 "follow_up_question": followup_data["follow_up_prompt"],
+                "interactive_options": options,
+                "interactive_facet": facet,
+                "can_skip": True,
+                "verification_actions": [],
                 "confirmation_prompt": "Did this guidance help clarify what to share?",
                 "source": followup_data["source"],
                 "sources": [followup_data["source"]],
                 "prevention_checklist": [
-                    "Always check DevTools Console (F12) for uncaught exceptions.",
-                    "Check DevTools Network tab for failed 4xx or 5xx API calls.",
-                    "Review component props and initial state definitions.",
+                    "Inspect browser console for the exact error message.",
+                    "Check network tab for failed API calls.",
                 ],
-                "related_issues": ["typeerror_map", "cors_policy_blocked", "div_not_centered"],
                 "redactions_count": redactions_count,
                 "evidence_summary": {
-                    "input_source": evidence["inputSource"],
-                    "file_location": evidence["fileLocation"],
-                    "detected_framework": evidence["detectedFramework"],
-                    "confirmed_observations": evidence["observations"],
+                    "input_source": evidence.get("inputSource"),
+                    "is_browser_captured": evidence.get("isBrowserCaptured"),
+                    "file_location": evidence.get("fileLocation"),
+                    "detected_framework": evidence.get("detectedFramework"),
+                    "confirmed_observations": evidence.get("observations"),
                 },
             }
 
-        # 2. Enrich search query using history if follow-up
+        # 2. Check for multi-turn conversational follow-up
         search_query = clean_text
         is_multiturn_followup = False
         if sanitized_history:
@@ -208,7 +329,11 @@ class DiagnosticEngine:
             top_match = ranked_matches[0]
             top_item = top_match["item"]
             score = top_match["score"]
-            is_uncertain = score < 20.0
+
+            # Evaluate reliability of match
+            eval_res = MatchEvaluator.evaluate_match(top_match, clean_text, evidence, case)
+            is_uncertain = not eval_res["is_reliable"] or score < 20.0
+            confidence_level = eval_res["confidence"]
 
             problem = top_item.get("problem", "")
             likely_cause = top_item.get("likely_cause", "")
@@ -254,7 +379,7 @@ class DiagnosticEngine:
             if is_multiturn_followup:
                 title = f"{title} (Follow-up Context)"
 
-            # Step 4: Pass to LLM if available, grounding with evidence
+            # Step 4: Pass to LLM if available, grounding with evidence & target language
             if self.llm_service.is_available():
                 try:
                     llm_res = await self.llm_service.generate_grounded_response(
@@ -262,6 +387,7 @@ class DiagnosticEngine:
                         top_item,
                         sanitized_history,
                         evidence,
+                        target_language=active_lang,
                     )
                     llm_output = llm_res.get("output")
                     provider = llm_res.get("provider", "knowledge_base")
@@ -274,7 +400,7 @@ class DiagnosticEngine:
                         extra_tips = llm_output.get("extra_tips") or extra_tips
                         generated_by = provider
                         model_label = f"✨ AI Explained ({provider.capitalize()})"
-                except Exception as err:
+                except Exception:
                     pass
 
             file_loc = evidence.get("fileLocation")
@@ -283,14 +409,20 @@ class DiagnosticEngine:
                 file_hint = f"{file_loc['file']}:{file_loc['line']}" if file_loc.get("line") else file_loc["file"]
 
             follow_up_question = evidence.get("focusedFollowUp")
+            case.active_hypothesis = likely_cause
+            case.suggested_fix = str(code_after)
 
             return {
                 "matched": True,
                 "generated_by": generated_by,
                 "model_label": model_label,
+                "state": DiagnosticState.PRESENT_SOLUTION.value,
+                "case_summary": case.to_dict(),
+                "language": active_lang,
                 "is_followup_needed": False,
                 "is_uncertain": is_uncertain,
                 "confidence_score": round(score, 1),
+                "confidence_level": confidence_level,
                 "category": category,
                 "title": title,
                 "problem": problem,
@@ -303,6 +435,9 @@ class DiagnosticEngine:
                 "code_context_note": code_context_note,
                 "extra_tips": extra_tips,
                 "follow_up_question": follow_up_question,
+                "interactive_options": [],
+                "can_skip": False,
+                "verification_actions": ["verify_solved", "verify_broken"],
                 "prevention_checklist": top_item.get("prevention_checklist", [
                     "Always check browser console (F12) for uncaught exceptions.",
                     "Verify component props and default states.",
@@ -338,18 +473,30 @@ class DiagnosticEngine:
 
         if self.llm_service.is_available():
             try:
-                llm_diag = await self.llm_service.diagnose_arbitrary_error(clean_text, sanitized_history, evidence)
+                llm_diag = await self.llm_service.diagnose_arbitrary_error(
+                    clean_text,
+                    sanitized_history,
+                    evidence,
+                    target_language=active_lang,
+                )
                 if llm_diag and llm_diag.get("problem") and llm_diag.get("fix_steps"):
                     provider_name = str(llm_diag.get("provider", "ai")).capitalize()
                     source_title = llm_diag.get("source_title", "Official Documentation")
                     source_url = llm_diag.get("source_url", "https://developer.mozilla.org/en-US/docs/Web")
+                    case.active_hypothesis = llm_diag.get("likely_cause")
+                    case.suggested_fix = str(llm_diag.get("code_after"))
+
                     return {
                         "matched": False,
                         "generated_by": llm_diag.get("provider", "llm"),
                         "model_label": f"⚡ Dynamic AI Diagnosis ({provider_name})",
+                        "state": DiagnosticState.PRESENT_SOLUTION.value,
+                        "case_summary": case.to_dict(),
+                        "language": active_lang,
                         "is_followup_needed": False,
                         "is_uncertain": False,
                         "confidence_score": 0.95,
+                        "confidence_level": "medium",
                         "category": llm_diag.get("category", "Frontend Error Diagnosis"),
                         "title": llm_diag.get("title", f"Diagnosis: {first_line[:60]}"),
                         "problem": llm_diag.get("problem"),
@@ -362,6 +509,9 @@ class DiagnosticEngine:
                         "code_context_note": "Tailored real-time solution generated for your frontend error.",
                         "extra_tips": llm_diag.get("extra_tips", "Inspect browser console and network headers."),
                         "follow_up_question": None,
+                        "interactive_options": [],
+                        "can_skip": False,
+                        "verification_actions": ["verify_solved", "verify_broken"],
                         "prevention_checklist": llm_diag.get("prevention_checklist", [
                             "Always catch async promises with try/catch.",
                             "Use React ErrorBoundary around critical component subtrees.",
@@ -387,9 +537,13 @@ class DiagnosticEngine:
             "matched": False,
             "generated_by": "knowledge_base",
             "model_label": "📚 General Diagnostics",
+            "state": DiagnosticState.ESCALATE_OR_FALLBACK.value,
+            "case_summary": case.to_dict(),
+            "language": active_lang,
             "is_followup_needed": False,
             "is_uncertain": True,
             "confidence_score": 0.0,
+            "confidence_level": "low",
             "category": "Frontend Runtime & Troubleshooting",
             "title": "Uncatalogued Frontend Issue (General Diagnostics)",
             "problem": f"Encountered an uncatalogued issue or custom runtime state: '{first_line[:90]}...'.",
@@ -411,6 +565,13 @@ class DiagnosticEngine:
             "code_context_note": "General fallback illustration — adapt to your codebase.",
             "extra_tips": "To get a more specific diagnosis, please provide the complete stack trace and specify the framework (e.g. React 19, Next.js, Vue 3).",
             "follow_up_question": evidence.get("focusedFollowUp") or "Can you share the full stack trace or the code where this error occurs?",
+            "interactive_options": [
+                "The error happens in an async API call",
+                "The error happens during component render",
+                "I see a 404 / 500 network error",
+            ],
+            "can_skip": False,
+            "verification_actions": ["verify_solved", "verify_broken"],
             "prevention_checklist": [
                 "Catch all async promises with try/catch.",
                 "Add top-level React ErrorBoundaries to prevent white screens.",
@@ -418,16 +579,16 @@ class DiagnosticEngine:
             ],
             "related_issues": ["typeerror_map", "cors_policy_blocked", "infinite_rerender"],
             "source": {
-                "title": "React Docs — Catching Rendering Errors with Error Boundaries",
-                "url": "https://react.dev/reference/react/Component#catching-rendering-errors-with-an-error-boundary",
+                "title": "MDN Web Docs — Error Handling",
+                "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Control_flow_and_error_handling",
             },
             "sources": [
                 {
-                    "title": "React Docs — Catching Rendering Errors with Error Boundaries",
-                    "url": "https://react.dev/reference/react/Component#catching-rendering-errors-with-an-error-boundary",
+                    "title": "MDN Web Docs — Error Handling",
+                    "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Control_flow_and_error_handling",
                 }
             ],
-            "confirmation_prompt": "Did this general troubleshooting advice help? Please rate below.",
+            "confirmation_prompt": "Did this general guidance help isolate the problem?",
             "redactions_count": redactions_count,
             "evidence_summary": {
                 "input_source": evidence.get("inputSource"),
@@ -468,14 +629,13 @@ class DiagnosticEngine:
                     "full_context": snippet,
                 })
 
-        # Match unique errors against knowledge base
         diagnosed_issues = []
         seen_categories = set()
 
         for err in extracted_errors:
             res = await self.diagnose(
                 err["snippet"],
-                enable_privacy=False,
+                enable_privacy=True,
                 conversation_history=None,
                 context={
                     "stack": err["full_context"],

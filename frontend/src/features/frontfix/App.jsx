@@ -90,6 +90,8 @@ export default function FrontFixApp({ onClose, isDrawer = false, initialError = 
             onToggleSidebar={sidebar.toggle}
             onNewChat={chat.newChat}
             onClose={onClose}
+            language={chat.language}
+            onLanguageChange={chat.changeLanguage}
           />
 
           {activeError && chat.chatStarted && (
@@ -129,6 +131,9 @@ export default function FrontFixApp({ onClose, isDrawer = false, initialError = 
                 messages={chat.messages}
                 typingStatuses={chat.typingStatuses}
                 onToast={showToast}
+                onSelectOption={chat.selectOption}
+                onSkipQuestions={chat.skipQuestions}
+                onVerifySolution={chat.verifySolution}
               />
             ) : (
               <HeroView
