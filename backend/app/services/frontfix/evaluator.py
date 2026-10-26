@@ -1,57 +1,64 @@
 """
-Match Evaluator & Interactive Question Generator for FrontFix AI
-Evaluates candidate knowledge items for reliability and generates targeted follow-up questions with clickable options.
+FrontFix AI Evaluator & Targeted Follow-Up Question Generator
+Evaluates retrieved knowledge matches and generates 1-3 targeted questions
+with clickable option chips and skip support.
 """
 
+from typing import Dict, Any, List, Optional
 import re
-from typing import Dict, Any, List, Optional, Tuple
-from .multilingual import MultilingualService
 from .state_machine import CaseSummary
 
 
 class MatchEvaluator:
-    """Evaluates whether a candidate knowledge base item is reliable or contradictory."""
+    """Evaluates whether a retrieved knowledge base item reliably matches user evidence."""
 
-    @staticmethod
+    CONFIDENCE_HIGH_THRESHOLD = 35.0
+    CONFIDENCE_MED_THRESHOLD = 20.0
+
+    @classmethod
     def evaluate_match(
-        candidate: Dict[str, Any],
+        cls,
+        top_match: Dict[str, Any],
         query: str,
         evidence: Dict[str, Any],
-        case_summary: Optional[CaseSummary] = None,
+        case: Optional[CaseSummary] = None,
     ) -> Dict[str, Any]:
-        score = candidate.get("score", 0.0)
-        item = candidate.get("item", {})
-        item_id = item.get("id", "")
-        item_title = item.get("title", "").lower()
+        """
+        Calculates confidence and flags contradictions.
+        Criteria:
+        1. Retrieval score from TF-IDF
+        2. Technology/Framework alignment
+        3. Contradiction checks (e.g., claiming backend issue for pure CSS question)
+        """
+        score = float(top_match.get("score", 0.0))
+        item = top_match.get("item", {})
         item_category = item.get("category", "").lower()
-
-        detected_framework = (evidence.get("detectedFramework") or "").lower()
-        if case_summary and case_summary.framework:
-            detected_framework = case_summary.framework.lower()
-
-        # Check for direct contradiction (e.g. Angular query matching React item)
-        is_contradictory = False
-        reasons = []
-
-        if "react" in item_category or "react" in item_title:
-            if detected_framework in ("angular", "vue", "svelte") and "react" not in query.lower():
-                is_contradictory = True
-                reasons.append(f"Contradictory framework: Expected React, detected {detected_framework}")
-
-        # Check symptom alignment
-        trigger_patterns = [p.lower() for p in item.get("trigger_patterns", [])]
         q_lower = query.lower()
-        matches_trigger = any(tp in q_lower for tp in trigger_patterns)
 
-        # Confidence rubric
-        confidence = "low"
+        reasons = []
+        is_contradictory = False
+
+        # Framework check
+        detected_fw = evidence.get("detectedFramework")
+        if detected_fw and detected_fw.lower() not in item.get("problem", "").lower() and "react" in item_category:
+            if detected_fw.lower() in ["vue", "angular", "svelte"]:
+                is_contradictory = True
+                reasons.append(f"Retrieved React solution contradicts user's detected framework: {detected_fw}")
+
+        # Check for CSS vs Runtime contradiction
+        if any(w in q_lower for w in ["css", "flex", "align", "color", "overflow", "margin", "padding"]):
+            if "runtime" in item_category or "api" in item_category or "async" in item_category:
+                is_contradictory = True
+                reasons.append("Retrieved runtime/API solution contradicts CSS layout question")
+
         is_reliable = False
+        confidence = "low"
 
         if not is_contradictory:
-            if score >= 35.0 or (score >= 20.0 and matches_trigger):
+            if score >= cls.CONFIDENCE_HIGH_THRESHOLD:
                 confidence = "high"
                 is_reliable = True
-            elif score >= 14.0 or matches_trigger:
+            elif score >= cls.CONFIDENCE_MED_THRESHOLD:
                 confidence = "medium"
                 is_reliable = True
 
@@ -77,33 +84,76 @@ class QuestionGenerator:
     ) -> Dict[str, Any]:
         q_lower = query.lower()
 
-        # Determine missing facet
-        # 1. Did the user say the app is crashing / blank / freezing?
-        if any(w in q_lower for w in ["crash", "blank", "freeze", "white screen", "broken", "not working", "nhi chal raha", "ruk gaya"]):
-            if "symptom" not in case.answered_facets:
-                return cls._create_symptom_question(lang)
+        # 1. CSS / Layout issues take precedence if CSS is explicitly mentioned
+        if any(w in q_lower for w in ["css", "style", "align", "center", "flex", "grid", "overflow", "layout"]):
+            if "css_facet" not in case.answered_facets:
+                return cls._create_css_question(lang)
 
-        # 2. Did they provide an error like .map() or null property without data source?
+        # 2. 502 Bad Gateway / Proxy / Network Connection Issues
+        if any(w in q_lower for w in ["502", "bad gateway", "proxy", "econnrefused", "connect econ", "503", "504", "failed to fetch"]):
+            if "network_status" not in case.answered_facets:
+                return cls._create_network_502_question(lang)
+
+        # 3. Did they provide an error like .map() or null property without data source?
         if "map" in q_lower or "cannot read" in q_lower or "undefined" in q_lower or "null" in q_lower:
             if "data_source" not in case.answered_facets:
                 return cls._create_datasource_question(lang)
             if "reproduction_trigger" not in case.answered_facets:
                 return cls._create_timing_question(lang)
 
-        # 3. CSS / Layout issues
-        if any(w in q_lower for w in ["css", "style", "align", "center", "flex", "grid", "overflow"]):
-            if "css_facet" not in case.answered_facets:
-                return cls._create_css_question(lang)
+        # 4. Did the user say the app is crashing / blank / freezing?
+        if any(w in q_lower for w in ["crash", "blank", "freeze", "white screen", "broken", "not working", "nhi chal raha", "ruk gaya"]):
+            if "symptom" not in case.answered_facets:
+                return cls._create_symptom_question(lang)
 
-        # 4. General fallback question
+        # 5. General fallback question
         return cls._create_general_question(lang, query)
+
+    @classmethod
+    def _create_network_502_question(cls, lang: str) -> Dict[str, Any]:
+        if lang in ("hi", "hinglish"):
+            return {
+                "facet": "network_status",
+                "question": "502 Bad Gateway / Proxy error tab aata hai jab frontend backend se connect nahi kar pata. Aapke setup mein kya ho raha hai?",
+                "options": [
+                    "Backend server port 8000 par start nahi hai (ECONNREFUSED)",
+                    "Vite dev server run ho raha hai lekin proxy 8000 connect nahi ho rahi",
+                    "Backend start hai par kisi aur port par chal raha hai",
+                    "API route / URL path galat hai ya 500 error de raha hai",
+                ],
+                "explanation": "Backend server connection verify karke proxy issue solve ho jata hai.",
+            }
+        elif lang == "pa":
+            return {
+                "facet": "network_status",
+                "question": "502 Bad Gateway ਐਰਰ ਉਦੋਂ ਆਉਂਦਾ ਹੈ ਜਦੋਂ ਫਰੰਟਐਂਡ ਬੈਕਐਂਡ ਨਾਲ ਜੁੜ ਨਹੀਂ ਪਾਉਂਦਾ। ਤੁਹਾਡੇ ਸਿਸਟਮ ਵਿੱਚ ਕੀ ਹੋ ਰਿਹਾ ਹੈ?",
+                "options": [
+                    "ਬੈਕਐਂਡ ਸਰਵਰ ਪੋਰਟ 8000 'ਤੇ ਚੱਲ ਨਹੀਂ ਰਿਹਾ (ECONNREFUSED)",
+                    "ਵਾਈਟ (Vite) ਪ੍ਰੌਕਸੀ ਕੁਨੈਕਟ ਨਹੀਂ ਕਰ ਪਾ ਰਹੀ",
+                    "ਬੈਕਐਂਡ ਕਿਸੇ ਹੋਰ ਪੋਰਟ 'ਤੇ ਚੱਲ ਰਿਹਾ ਹੈ",
+                    "API ਰੂਟ ਗ਼ਲਤ ਹੈ ਜਾਂ 500 ਐਰਰ ਆ ਰਿਹਾ ਹੈ",
+                ],
+                "explanation": "ਬੈਕਐਂਡ ਕੁਨੈਕਸ਼ਨ ਚੈੱਕ ਕਰਕੇ ਇਸ ਐਰਰ ਨੂੰ ਹੱਲ ਕੀਤਾ ਜਾ ਸਕਦਾ ਹੈ।",
+            }
+        else:
+            return {
+                "facet": "network_status",
+                "question": "A 502 Bad Gateway / proxy failure usually indicates the frontend cannot reach the backend on port 8000. Which scenario matches your environment?",
+                "options": [
+                    "Backend server is not running (uvicorn port 8000 offline)",
+                    "Vite proxy error: connect ECONNREFUSED 127.0.0.1:8000",
+                    "Backend is running on a different port or host",
+                    "The backend endpoint crashed and returned a 500 error",
+                ],
+                "explanation": "Checking the backend process and proxy configuration identifies whether the issue is network routing or server outage.",
+            }
 
     @classmethod
     def _create_symptom_question(cls, lang: str) -> Dict[str, Any]:
         if lang == "hi":
             return {
                 "facet": "symptom",
-                "question": "एप्लिकेशन क्रैश होने पर वास्तव में क्या दिखाई देता है?",
+                "question": "एप्लिकेशन क्रैश या ब्लैंक होने पर वास्तव में क्या दिखाई देता है?",
                 "options": [
                     "स्क्रीन पूरी तरह से सफेद/ब्लैंक (Blank Page) हो जाती है",
                     "ब्राउज़र कंसोल (F12) में लाल रंग का एरर दिखाई देता है",
@@ -127,7 +177,7 @@ class QuestionGenerator:
         elif lang == "hinglish":
             return {
                 "facet": "symptom",
-                "question": "Jab app crash hoti hai toh exactly screen pe kya show hota hai?",
+                "question": "Jab screen blank ya crash hoti hai toh exactly kya show hota hai?",
                 "options": [
                     "Page bilkul blank / white screen ho jata hai",
                     "Console (F12) mein red error message aata hai",
@@ -139,10 +189,10 @@ class QuestionGenerator:
         else:
             return {
                 "facet": "symptom",
-                "question": "What happens when the application crashes?",
+                "question": "What happens when your application crashes or goes blank?",
                 "options": [
                     "The page becomes completely blank (White Screen)",
-                    "I see a red error message in the browser console",
+                    "I see a red error message in the browser console (F12)",
                     "The application freezes or stops responding",
                     "A specific component fails to render",
                 ],
@@ -232,7 +282,7 @@ class QuestionGenerator:
         else:
             return {
                 "facet": "css_facet",
-                "question": "Which specific CSS layout problem are you encountering?",
+                "question": "You mentioned CSS — is this about element centering, z-index stacking, flexbox overflow, or mobile viewport jumping?",
                 "options": [
                     "Div or element refuses to center horizontally or vertically",
                     "Element renders behind other content (z-index stacking issue)",
@@ -249,7 +299,7 @@ class QuestionGenerator:
                 "facet": "general_context",
                 "question": "Behtar diagnosis ke liye ek detail share karein:",
                 "options": [
-                    "Browser Console ka exact red error message paste karein",
+                    "Browser Console (F12) ka exact red error message paste karein",
                     "Bataiye kaunsa framework use kar rahe hain (React, Vite, Next.js, etc.)",
                     "Component ka code snippet paste karein jahan issue hai",
                 ],

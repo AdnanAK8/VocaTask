@@ -63,6 +63,7 @@ export default function BotMessage({
     );
   }
 
+  const isCollecting = data.state === 'COLLECT_CONTEXT';
   const badgeInfo = data.state ? getStateBadgeInfo(data.state) : null;
 
   // Build the list of rows first so each gets a sequential reveal index.
@@ -119,7 +120,8 @@ export default function BotMessage({
     );
   }
 
-  if (Array.isArray(data.fix_steps) && data.fix_steps.length > 0) {
+  // Only show code fixes and steps when presenting solutions, not during context gathering
+  if (!isCollecting && Array.isArray(data.fix_steps) && data.fix_steps.length > 0) {
     rows.push(
       <div className="section-block">
         <div className="section-label">🛠️ Fix Steps</div>
@@ -135,7 +137,7 @@ export default function BotMessage({
     );
   }
 
-  if (data.code_before && data.code_after) {
+  if (!isCollecting && data.code_before && data.code_after) {
     rows.push(
       <DiffBlock
         fileHint={data.file_hint}
@@ -152,6 +154,13 @@ export default function BotMessage({
       <VerificationActions
         actions={data.verification_actions}
         onVerify={onVerifySolution}
+      />
+    );
+  } else if (!isCollecting && data.confirmation_prompt) {
+    rows.push(
+      <FeedbackBar
+        prompt={data.confirmation_prompt}
+        onSubmit={() => onToast('Feedback submitted. Thank you!')}
       />
     );
   }
@@ -173,13 +182,6 @@ export default function BotMessage({
       </div>
     );
   }
-
-  rows.push(
-    <FeedbackBar
-      prompt={data.confirmation_prompt}
-      onSubmit={() => onToast('Feedback submitted. Thank you!')}
-    />
-  );
 
   return (
     <div className="chat-bubble-bot">

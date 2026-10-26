@@ -10,15 +10,32 @@ export default function useBackendStatus(intervalMs = 6000) {
 
     async function check() {
       let ok = false;
+      const baseUrl = BACKEND_URL || '';
+
       try {
-        const res = await fetch(`${BACKEND_URL}/`, { method: 'GET' });
+        // Primary check: FrontFix health endpoint
+        const res = await fetch(`${baseUrl}/api/frontfix/health`, { method: 'GET' });
         if (res.ok) {
           const data = await res.json().catch(() => null);
-          ok = Boolean(data && (data.app?.includes('FrontFix') || data.team?.includes('Frontend Support') || data.status === 'online'));
+          ok = Boolean(data && (data.status === 'ok' || data.status === 'online'));
         }
       } catch {
         ok = false;
       }
+
+      if (!ok) {
+        try {
+          // Secondary fallback: Main unified API health endpoint
+          const res = await fetch(`${baseUrl}/api/health`, { method: 'GET' });
+          if (res.ok) {
+            const data = await res.json().catch(() => null);
+            ok = Boolean(data && (data.status === 'ok' || data.status === 'online'));
+          }
+        } catch {
+          ok = false;
+        }
+      }
+
       if (!cancelled) setOnline(ok);
     }
 

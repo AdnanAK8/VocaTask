@@ -44,6 +44,16 @@ class DiagnosticEngine:
         "page blank ho gaya",
         "kuch kaam nahi kar raha",
         "app crash ho rahi hai",
+        "my screen is blank",
+        "screen is blank",
+        "my screen is blank.",
+        "screen is blank.",
+        "my screen is showing error 502",
+        "error 502",
+        "502",
+        "502 bad gateway",
+        "bad gateway",
+        "proxy error",
     }
 
     def __init__(self, options: dict | None = None):
@@ -66,21 +76,22 @@ class DiagnosticEngine:
         if not query or not isinstance(query, str):
             return True
         trimmed = query.strip().lower()
-        cleaned_simple = re.sub(r"[^a-z\s]", "", trimmed).strip()
+        cleaned_simple = re.sub(r"[^a-z0-9\s]", "", trimmed).strip()
 
-        if cleaned_simple in self.VAGUE_QUERIES:
+        if cleaned_simple in self.VAGUE_QUERIES or trimmed in self.VAGUE_QUERIES:
             return True
 
         vague_phrases = [
             "app crash", "app is crash", "application is crash", "app crashing", "crashing",
-            "page is blank", "blank screen", "white screen", "not working", "doesn't work",
-            "kuch kaam nahi", "chal nahi raha", "ruk gaya", "crash ho raha", "crash ho rahi"
+            "page is blank", "blank screen", "screen is blank", "screen blank", "white screen",
+            "not working", "doesn't work", "kuch kaam nahi", "chal nahi raha", "ruk gaya",
+            "crash ho raha", "crash ho rahi", "502", "error 502", "bad gateway", "proxy error"
         ]
         has_specific_error = any(kw in trimmed for kw in [
             "typeerror", "referenceerror", "syntaxerror", "uncaught", "cors",
-            "404", "500", "nan", "cls", "map", "hook", "useeffect", "usestate",
+            "nan", "cls", "map", "hook", "useeffect", "usestate",
             "z-index", "flex", "flexbox", "overflow", "ellipsis", "grid", "align", "center",
-            "failed to fetch", "networkerror", "hydration", "re-render", "rerender", "key prop"
+            "networkerror", "hydration", "re-render", "rerender", "key prop"
         ])
 
         if any(vp in trimmed for vp in vague_phrases) and not has_specific_error:
@@ -95,7 +106,25 @@ class DiagnosticEngine:
         q = query.lower()
         framework = evidence.get("detectedFramework", "Unknown") if evidence else "Unknown"
 
-        if any(w in q for w in ["css", "style", "align", "layout"]):
+        if any(w in q for w in ["502", "bad gateway", "proxy", "econnrefused", "503", "504"]):
+            return {
+                "category": "Network & Proxy Diagnostics",
+                "title": "502 Bad Gateway / Backend Connection Diagnostic",
+                "problem": f"Your query mentions a 502 Bad Gateway or proxy connection failure: '{query}'.",
+                "likely_cause": "A 502 Bad Gateway occurs when the frontend development proxy (Vite) cannot establish a connection to the backend server (FastAPI on port 8000).",
+                "fix_steps": [
+                    "1. Confirm your FastAPI backend server is running on http://127.0.0.1:8000.",
+                    "2. Start backend: .\\backend\\venv\\Scripts\\Activate.ps1 followed by uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload",
+                    "3. Check your frontend/vite.config.ts proxy settings for /api.",
+                ],
+                "extra_tips": "If uvicorn is running on a different port, update the Vite proxy target to match.",
+                "follow_up_prompt": "Which scenario describes your backend setup right now?",
+                "source": {
+                    "title": "MDN Web Docs — 502 Bad Gateway",
+                    "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/502",
+                },
+            }
+        elif any(w in q for w in ["css", "style", "align", "layout"]):
             return {
                 "category": "CSS & Layout Inquiry",
                 "title": "Need More CSS Context to Diagnose",
@@ -274,6 +303,7 @@ class DiagnosticEngine:
             interactive_q = QuestionGenerator.generate_interactive_followup(clean_text, case, evidence, active_lang)
             options = interactive_q.get("options", [])
             facet = interactive_q.get("facet")
+            question_text = interactive_q.get("question") or followup_data.get("follow_up_prompt", "")
 
             return {
                 "matched": False,
@@ -289,9 +319,9 @@ class DiagnosticEngine:
                 "problem": followup_data["problem"],
                 "likely_cause": followup_data["likely_cause"],
                 "fix_steps": followup_data["fix_steps"],
-                "extra_tips": followup_data["extra_tips"],
-                "follow_up_prompt": followup_data["follow_up_prompt"],
-                "follow_up_question": followup_data["follow_up_prompt"],
+                "extra_tips": interactive_q.get("explanation") or followup_data["extra_tips"],
+                "follow_up_prompt": question_text,
+                "follow_up_question": question_text,
                 "interactive_options": options,
                 "interactive_facet": facet,
                 "can_skip": True,
