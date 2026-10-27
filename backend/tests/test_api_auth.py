@@ -1,29 +1,21 @@
 import unittest
 import os
-from psycopg.conninfo import conninfo_to_dict
 from fastapi.testclient import TestClient
 from app.main import app
 from app.core.config import settings
 from app.core.database import close_db_pool
-from app.services import auth_store
+from tests.db_test_utils import setup_test_database, teardown_test_database
+
 
 class TestAuthAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        test_database_url = os.getenv("TEST_DATABASE_URL")
-        if not test_database_url:
-            raise unittest.SkipTest("Set TEST_DATABASE_URL to a dedicated PostgreSQL database ending in _test.")
-        if not conninfo_to_dict(test_database_url).get("dbname", "").endswith("_test"):
-            raise RuntimeError("Refusing to run API tests unless the database name ends in _test.")
-        settings.DATABASE_URL = test_database_url
-        close_db_pool()
-        from app.services import task_store
-        task_store.init_db()
-        auth_store.init_auth_db()
+        cls.db_type = setup_test_database()
+        cls.client = TestClient(app)
 
     @classmethod
     def tearDownClass(cls):
-        close_db_pool()
+        teardown_test_database()
 
     def setUp(self):
         self.client = TestClient(app)
@@ -145,6 +137,7 @@ class TestAuthAPI(unittest.TestCase):
         self.assertEqual(data["user"]["name"], "Facebook User John")
         self.assertEqual(data["user"]["email"], "john.fb@example.com")
         self.assertEqual(data["user"]["provider"], "facebook")
+
 
 if __name__ == "__main__":
     unittest.main()

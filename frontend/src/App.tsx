@@ -3,11 +3,11 @@ import type { FormEvent } from 'react';
 import './App.css';
 import { Check, ChevronRight, Clock3, MessageCircle, Pencil, Plus, Settings, Trash2, X, Mic, Download, Bell, BellOff, Sparkles } from 'lucide-react';
 import { FrontFixDrawer } from './features/frontfix';
-import { VoiceRecorder, TaskConfirmModal, useTaskReminders } from './features/tasks';
-import type { Task, ExtractedTask, TaskCreateInput, TaskUpdateInput, PriorityType, CategoryType } from './features/tasks';
+import { VoiceRecorder, TaskConfirmModal, useTaskReminders, useTasks } from './features/tasks';
+import type { Task, ExtractedTask, TaskCreateInput, PriorityType, CategoryType } from './features/tasks';
 import { AuthGateDesign as AuthGate, UserProfileMenu, authService } from './features/auth';
 import type { User } from './features/auth';
-import { SettingsModal, InstallPwaBanner, ToastReminder, api, ErrorBoundary, errorTelemetry, type CapturedError } from './shared';
+import { SettingsModal, InstallPwaBanner, ToastReminder, ErrorBoundary, errorTelemetry, type CapturedError } from './shared';
 import aivantaLogo from './assets/Aivanta-Logo.png';
 
 interface TaskFormValues {
@@ -29,8 +29,6 @@ const emptyForm: TaskFormValues = {
   category: 'general',
   reminder_required: true,
 };
-
-type TaskFilter = 'all' | 'upcoming' | 'completed';
 
 const formatDate = (value?: string | null): string => {
   if (!value) return 'No date';
@@ -65,53 +63,46 @@ const AppContent = ({
 }: AppContentProps) => {
   const [currentUser, setCurrentUser] = useState<User | null>(() => authService.getStoredUser());
   const [isAuthChecking, setIsAuthChecking] = useState(true);
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [extractedTask, setExtractedTask] = useState<ExtractedTask | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [errorCount, setErrorCount] = useState<number>(() => errorTelemetry.getErrorCount());
   const [isAssistantPromptVisible, setIsAssistantPromptVisible] = useState(true);
+  const [isVoiceOpen, setIsVoiceOpen] = useState(false);
+  const [isTaskFormOpen, setIsTaskFormOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [form, setForm] = useState<TaskFormValues>(emptyForm);
+  const [formError, setFormError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [today] = useState(() => new Date().toLocaleDateString(undefined, {
+    weekday: 'long', month: 'long', day: 'numeric',
+  }));
+
+  // Custom hook for tasks state and actions
+  const {
+    tasks,
+    setTasks,
+    tasksLoadError,
+    deletingIds,
+    taskFilter,
+    setTaskFilter,
+    pendingCount,
+    visibleTasks,
+    handleConfirmTask,
+    handleToggleTask,
+    handleDeleteTask,
+    handleCompleteFromReminder,
+    handleToggleReminder,
+    createManualTask,
+    updateManualTask,
+  } = useTasks(currentUser);
+
+  const reminders = useTaskReminders(tasks, handleCompleteFromReminder);
 
   useEffect(() => {
     return errorTelemetry.subscribe((errors) => {
       setErrorCount(errors.length);
     });
   }, []);
-  const [isVoiceOpen, setIsVoiceOpen] = useState(false);
-  const [isTaskFormOpen, setIsTaskFormOpen] = useState(false);
-  const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [form, setForm] = useState<TaskFormValues>(emptyForm);
-  const [formError, setFormError] = useState('');
-  const [tasksLoadError, setTasksLoadError] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-  const [deletingIds, setDeletingIds] = useState<string[]>([]);
-  const [taskFilter, setTaskFilter] = useState<TaskFilter>('all');
-  const [today] = useState(() => new Date().toLocaleDateString(undefined, {
-    weekday: 'long', month: 'long', day: 'numeric',
-  }));
-
-  const handleLogout = async () => {
-    await authService.logout();
-    setCurrentUser(null);
-    setTasks([]);
-  };
-
-  const openFrontFix = () => {
-    setIsAssistantPromptVisible(false);
-    setFrontFixError(errorTelemetry.getLatestError());
-    setIsFrontFixOpen(true);
-  };
-
-  const loadTasks = async () => {
-    if (!currentUser) return;
-    try {
-      const data = await api.getTasks();
-      setTasks(data);
-      setTasksLoadError('');
-    } catch (err) {
-      console.error('Error loading tasks:', err);
-      setTasksLoadError(err instanceof Error ? err.message : 'Could not load tasks from the backend.');
-    }
-  };
 
   // Check auth session on startup
   useEffect(() => {
@@ -131,101 +122,26 @@ const AppContent = ({
     };
   }, []);
 
-  // Load tasks on startup or when currentUser changes
-  useEffect(() => {
-    if (!currentUser) return;
-    let active = true;
-    api.getTasks()
-      .then((data) => {
-        if (active) {
-          setTasks(data);
-          setTasksLoadError('');
-        }
-      })
-      .catch((err) => {
-        console.error('Error loading tasks:', err);
-        if (active) {
-          setTasksLoadError(err instanceof Error ? err.message : 'Could not load tasks from the backend.');
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [currentUser]);
+  const handleLogout = async () => {
+    await authService.logout();
+    setCurrentUser(null);
+    setTasks([]);
+  };
+
+  const openFrontFix = () => {
+    setIsAssistantPromptVisible(false);
+    setFrontFixError(errorTelemetry.getLatestError());
+    setIsFrontFixOpen(true);
+  };
 
   const handleTaskExtracted = (extracted: ExtractedTask) => {
     setIsVoiceOpen(false);
     setExtractedTask(extracted);
   };
 
-  const handleConfirmTask = async (taskInput: TaskCreateInput) => {
-    const created = await api.createTask(taskInput);
-    setTasks((prev) => [created, ...prev]);
-    setTasksLoadError('');
+  const handleConfirmExtractedTask = async (taskInput: TaskCreateInput) => {
+    await handleConfirmTask(taskInput);
     setExtractedTask(null);
-  };
-
-  const handleToggleTask = async (id: string) => {
-    const previousTasks = tasks;
-    try {
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === id ? { ...t, status: t.status === 'pending' ? 'completed' : 'pending' } : t
-        )
-      );
-      await api.toggleTask(id);
-    } catch (err) {
-      console.error('Failed to toggle task:', err);
-      setTasks(previousTasks);
-      loadTasks();
-    }
-  };
-
-  const handleDeleteTask = async (id: string) => {
-  if (deletingIds.includes(id)) return; // ignore double-clicks
-  setDeletingIds((prev) => [...prev, id]);
-
-  // wait for the animation (must match the CSS duration)
-  await new Promise((resolve) => setTimeout(resolve, 350));
-
-  try {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
-    await api.deleteTask(id);
-  } catch (err) {
-    console.error('Failed to delete task:', err);
-    loadTasks();
-  } finally {
-    setDeletingIds((prev) => prev.filter((x) => x !== id));
-  }
-};
-
-  const handleCompleteFromReminder = async (id: string) => {
-    try {
-      setTasks((prev) =>
-        prev.map((t) => (t.id === id ? { ...t, status: 'completed' } : t))
-      );
-      await api.updateTask(id, { status: 'completed' });
-    } catch (err) {
-      console.error('Failed to complete task from reminder:', err);
-    }
-  };
-
-  const reminders = useTaskReminders(tasks, handleCompleteFromReminder);
-
-  const handleToggleReminder = async (task: Task) => {
-    const nextVal = !task.reminder_required;
-    try {
-      setTasks((prev) =>
-        prev.map((t) => (t.id === task.id ? { ...t, reminder_required: nextVal } : t))
-      );
-      await api.updateTask(task.id, { reminder_required: nextVal });
-      if (nextVal && reminders.permission !== 'granted') {
-        void reminders.requestPermission();
-      }
-    } catch (err) {
-      console.error('Failed to toggle reminder:', err);
-      loadTasks();
-    }
   };
 
   const handleHeaderNotificationClick = () => {
@@ -272,12 +188,9 @@ const AppContent = ({
 
     try {
       if (editingTask) {
-        const updates: TaskUpdateInput = values;
-        const updated = await api.updateTask(editingTask.id, updates);
-        setTasks((current) => current.map((task) => task.id === updated.id ? updated : task));
+        await updateManualTask(editingTask.id, values);
       } else {
-        const created = await api.createTask(values);
-        setTasks((current) => [created, ...current]);
+        await createManualTask(values);
       }
       setIsTaskFormOpen(false);
     } catch (error) {
@@ -286,14 +199,6 @@ const AppContent = ({
       setIsSaving(false);
     }
   };
-
-  const pendingCount = tasks.filter((task) => task.status === 'pending').length;
-  const completedCount = tasks.length - pendingCount;
-  const visibleTasks = tasks.filter((task) => {
-    if (taskFilter === 'upcoming') return task.status === 'pending';
-    if (taskFilter === 'completed') return task.status === 'completed';
-    return true;
-  });
 
   if (isAuthChecking) {
     return (
@@ -449,64 +354,115 @@ const AppContent = ({
             <span>{pendingCount} {pendingCount === 1 ? 'task' : 'tasks'} left</span>
           </div>
 
-          <div className="task-list-panel">
-            <div className="task-filters" role="tablist" aria-label="Filter tasks">
-              <button className={taskFilter === 'all' ? 'active' : ''} onClick={() => setTaskFilter('all')} role="tab" aria-selected={taskFilter === 'all'}>
-                All <span>{tasks.length}</span>
-              </button>
-              <button className={taskFilter === 'upcoming' ? 'active' : ''} onClick={() => setTaskFilter('upcoming')} role="tab" aria-selected={taskFilter === 'upcoming'}>
-                Upcoming <span>{pendingCount}</span>
-              </button>
-              <button className={taskFilter === 'completed' ? 'active' : ''} onClick={() => setTaskFilter('completed')} role="tab" aria-selected={taskFilter === 'completed'}>
-                Completed <span>{completedCount}</span>
-              </button>
-            </div>
-            <div className="task-list" role="tabpanel">
-              {visibleTasks.length === 0 ? (
-                <div className="empty-state">
-                  <span className="empty-icon"><Check size={22} /></span>
-                  <h3>{tasks.length === 0 ? 'A little room to breathe' : 'Nothing here yet'}</h3>
-                  <p>{tasks.length === 0 ? 'Your tasks will show up here. Add one by voice or enter it yourself.' : 'Tasks matching this filter will appear here.'}</p>
-                </div>
-              ) : visibleTasks.map((task) => (
-                <article className={`task-card ${task.status === 'completed' ? 'completed' : ''} ${deletingIds.includes(task.id) ? 'deleting' : ''}`} key={task.id}>
+          <div className="task-filter-tabs" role="tablist" aria-label="Task status filters">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={taskFilter === 'all'}
+              className={`filter-tab ${taskFilter === 'all' ? 'active' : ''}`}
+              onClick={() => setTaskFilter('all')}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={taskFilter === 'upcoming'}
+              className={`filter-tab ${taskFilter === 'upcoming' ? 'active' : ''}`}
+              onClick={() => setTaskFilter('upcoming')}
+            >
+              Upcoming ({pendingCount})
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={taskFilter === 'completed'}
+              className={`filter-tab ${taskFilter === 'completed' ? 'active' : ''}`}
+              onClick={() => setTaskFilter('completed')}
+            >
+              Done
+            </button>
+          </div>
+
+          <div className="tasks-list" role="list">
+            {visibleTasks.length === 0 ? (
+              <p className="empty-state">
+                {taskFilter === 'completed'
+                  ? 'No completed tasks yet.'
+                  : taskFilter === 'upcoming'
+                    ? 'No upcoming tasks. You are all caught up!'
+                    : 'No tasks yet. Try saying: "Remind me to call mom tomorrow at 6 PM"'}
+              </p>
+            ) : (
+              visibleTasks.map((task) => (
+                <article
+                  key={task.id}
+                  className={`task-row ${task.status === 'completed' ? 'completed' : ''} ${deletingIds.includes(task.id) ? 'deleting' : ''}`}
+                  role="listitem"
+                >
                   <button
-                    className={`task-check ${task.status === 'completed' ? 'checked' : ''}`}
-                    onClick={() => void handleToggleTask(task.id)}
-                    aria-label={task.status === 'completed' ? 'Mark as pending' : 'Mark as completed'}
-                    title={task.status === 'completed' ? 'Mark as pending' : 'Mark as completed'}
+                    type="button"
+                    className="status-toggle"
+                    onClick={() => handleToggleTask(task.id)}
+                    aria-label={`Mark "${task.title}" as ${task.status === 'completed' ? 'pending' : 'completed'}`}
                   >
                     {task.status === 'completed' && <Check size={14} />}
                   </button>
+
                   <div className="task-details">
-                    <h3>{task.title}</h3>
-                    <p>
-                      {formatDate(task.scheduled_date)}
-                      {task.scheduled_time && <><span className="detail-separator">·</span><Clock3 size={12} /> {formatTime(task.scheduled_time)}</>}
-                    </p>
+                    <p className="task-title">{task.title}</p>
+                    <div className="task-metadata">
+                      <span>{formatDate(task.scheduled_date)}</span>
+                      {task.scheduled_time && (
+                        <span>
+                          <Clock3 size={12} />
+                          {formatTime(task.scheduled_time)}
+                        </span>
+                      )}
+                      <span className={`badge priority-${task.priority}`}>{task.priority}</span>
+                      <span className="badge category">{task.category}</span>
+                      {task.reminder_required && (
+                        <span className="badge reminder-badge" title="Push alert & chime scheduled">
+                          <Bell size={11} /> Reminder
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <span className={`priority-tag ${task.priority}`}>{task.priority}</span>
-                  <span className={`category-tag ${task.category}`}>{task.category}</span>
+
                   <div className="task-actions">
                     <button
-                      className={`task-reminder-btn ${task.reminder_required ? 'active' : 'inactive'}`}
-                      onClick={() => void handleToggleReminder(task)}
-                      aria-label={task.reminder_required ? 'Disable reminder' : 'Enable reminder'}
-                      title={task.reminder_required ? 'Reminder enabled - Click to disable' : 'Reminder disabled - Click to enable'}
+                      type="button"
+                      className={`action-btn reminder-toggle ${task.reminder_required ? 'active' : ''}`}
+                      onClick={() => handleToggleReminder(task)}
+                      aria-label={task.reminder_required ? 'Turn off reminder alert' : 'Turn on reminder alert'}
+                      title={task.reminder_required ? 'Reminder alert on (click to mute)' : 'Reminder alert off (click to enable)'}
                     >
                       {task.reminder_required ? <Bell size={15} /> : <BellOff size={15} />}
                     </button>
-                    <button onClick={() => openTaskForm(task)} aria-label={`Edit ${task.title}`} title="Edit task"><Pencil size={15} /></button>
-                    <button onClick={() => void handleDeleteTask(task.id)} aria-label={`Delete ${task.title}`} title="Delete task"><Trash2 size={15} /></button>
+                    <button
+                      type="button"
+                      className="action-btn"
+                      onClick={() => openTaskForm(task)}
+                      aria-label={`Edit ${task.title}`}
+                      title="Edit task"
+                    >
+                      <Pencil size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      className="action-btn delete"
+                      onClick={() => handleDeleteTask(task.id)}
+                      aria-label={`Delete ${task.title}`}
+                      title="Delete task"
+                    >
+                      <Trash2 size={15} />
+                    </button>
                   </div>
                 </article>
-              ))}
-            </div>
+              ))
+            )}
           </div>
-
-          {completedCount > 0 && <p className="completed-summary">{completedCount} {completedCount === 1 ? 'task' : 'tasks'} completed</p>}
         </section>
-
       </main>
 
       <nav className="bottom-nav" aria-label="Main navigation">
@@ -575,7 +531,7 @@ const AppContent = ({
       {extractedTask && (
         <TaskConfirmModal
           extractedTask={extractedTask}
-          onConfirm={handleConfirmTask}
+          onConfirm={handleConfirmExtractedTask}
           onCancel={() => setExtractedTask(null)}
         />
       )}

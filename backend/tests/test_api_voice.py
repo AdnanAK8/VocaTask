@@ -1,12 +1,36 @@
+import os
 import unittest
 from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 from app.main import app
+from app.core.config import settings
+
+SECRET_KEYS = [
+    "GEMINI_API_KEY",
+    "GROQ_API_KEY",
+    "OPENAI_API_KEY",
+    "ELEVENLABS_API_KEY",
+    "ELEVEN_LAB_API_KEY",
+]
+
 
 class TestVoiceEndpoints(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.client = TestClient(app)
+        # Prevent unit tests from making live network calls to external LLMs
+        cls._orig_env = {k: os.environ.get(k, "") for k in SECRET_KEYS}
+        cls._orig_settings = {k: getattr(settings, k, "") for k in SECRET_KEYS}
+        for k in SECRET_KEYS:
+            os.environ[k] = ""
+            setattr(settings, k, "")
+
+    @classmethod
+    def tearDownClass(cls):
+        for k, v in cls._orig_env.items():
+            os.environ[k] = v
+        for k, v in cls._orig_settings.items():
+            setattr(settings, k, v)
 
     def test_process_text_hinglish(self):
         payload = {
@@ -158,6 +182,7 @@ class TestVoiceEndpoints(unittest.TestCase):
         self.assertEqual(d3["category"], "finance")
         self.assertEqual(d3["scheduled_time"], "18:00")
         self.assertIn("Pay", d3["title"])
+
 
 if __name__ == "__main__":
     unittest.main()

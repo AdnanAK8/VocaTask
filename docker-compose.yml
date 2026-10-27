@@ -1,4 +1,22 @@
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: vocatask-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PGDATABASE:-vocatask}
+      POSTGRES_USER: ${PGUSER:-vocatask_user}
+      POSTGRES_PASSWORD: ${PGPASSWORD:-vocatask_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-vocatask_user} -d ${PGDATABASE:-vocatask}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: ./backend
@@ -10,18 +28,21 @@ services:
     environment:
       - PORT=8000
       - DEFAULT_TIMEZONE=Asia/Kolkata
-      - DATABASE_URL=${DATABASE_URL:-}
-      - PGHOST=${PGHOST:-host.docker.internal}
-      - PGPORT=${PGPORT:-5433}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://vocatask_user:vocatask_password@db:5432/vocatask}
+      - PGHOST=db
+      - PGPORT=5432
       - PGDATABASE=${PGDATABASE:-vocatask}
       - PGUSER=${PGUSER:-vocatask_user}
-      - PGPASSWORD=${PGPASSWORD:-}
-      - DATABASE_POOL_MAX_SIZE=${DATABASE_POOL_MAX_SIZE:-2}
-      - CORS_ORIGINS=["http://localhost", "http://localhost:80", "http://localhost:5173"]
+      - PGPASSWORD=${PGPASSWORD:-vocatask_password}
+      - DATABASE_POOL_MAX_SIZE=${DATABASE_POOL_MAX_SIZE:-5}
+      - CORS_ORIGINS=["http://localhost", "http://localhost:80", "http://localhost:5173", "http://127.0.0.1:5173"]
       - GROQ_API_KEY=${GROQ_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - ELEVEN_LAB_API_KEY=${ELEVEN_LAB_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
 
   frontend:
     build:
@@ -33,3 +54,6 @@ services:
       - "80:80"
     depends_on:
       - backend
+
+volumes:
+  pgdata:

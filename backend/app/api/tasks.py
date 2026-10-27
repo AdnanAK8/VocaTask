@@ -1,3 +1,4 @@
+import os
 import logging
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query, Header
@@ -9,14 +10,20 @@ logger = logging.getLogger("tasks_api")
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
 def extract_user_id(authorization: Optional[str] = None, x_user_id: Optional[str] = None) -> Optional[str]:
-    """Helper to extract user_id from Authorization Bearer token or explicit X-User-Id header."""
-    if x_user_id and x_user_id.strip():
-        return x_user_id.strip()
+    """Helper to extract user_id from verified Authorization Bearer token.
+    Unverified X-User-Id is only allowed if ALLOW_UNVERIFIED_USER_HEADER=true in non-production.
+    """
     if authorization and authorization.startswith("Bearer "):
         token = authorization.split("Bearer ", 1)[1].strip()
         payload = auth_store.decode_access_token(token)
         if payload and payload.get("sub"):
             return payload.get("sub")
+        raise HTTPException(status_code=401, detail="Invalid or expired authentication token.")
+
+    if os.getenv("ENVIRONMENT") != "production" and os.getenv("ALLOW_UNVERIFIED_USER_HEADER", "false").lower() == "true":
+        if x_user_id and x_user_id.strip():
+            return x_user_id.strip()
+
     return None
 
 @router.get("", response_model=List[Task])

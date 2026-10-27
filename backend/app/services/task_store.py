@@ -115,7 +115,7 @@ def get_tasks(
         conditions.append("status = %s")
         params.append(status)
     if user_id:
-        conditions.append("(user_id = %s OR user_id IS NULL)")
+        conditions.append("user_id = %s")
         params.append(user_id)
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
@@ -134,7 +134,7 @@ def get_task(
     query = "SELECT * FROM tasks WHERE id = %s"
     params = [task_id]
     if user_id:
-        query += " AND (user_id = %s OR user_id IS NULL)"
+        query += " AND user_id = %s"
         params.append(user_id)
     with get_db_connection() as conn:
         with conn.cursor() as cursor:
@@ -175,7 +175,11 @@ def update_task(
     if updates:
         set_clauses = [f"{key} = %s" for key in updates]
         values = list(updates.values()) + [task_id]
-        sql = f"UPDATE tasks SET {', '.join(set_clauses)} WHERE id = %s"
+        if user_id:
+            sql = f"UPDATE tasks SET {', '.join(set_clauses)} WHERE id = %s AND user_id = %s"
+            values.append(user_id)
+        else:
+            sql = f"UPDATE tasks SET {', '.join(set_clauses)} WHERE id = %s"
         with get_db_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(sql, values)
@@ -188,8 +192,7 @@ def delete_task(task_id: str, user_id: Optional[str] = None) -> bool:
         with conn.cursor() as cursor:
             if user_id:
                 cursor.execute(
-                    "DELETE FROM tasks WHERE id = %s AND "
-                    "(user_id = %s OR user_id IS NULL)",
+                    "DELETE FROM tasks WHERE id = %s AND user_id = %s",
                     (task_id, user_id),
                 )
             else:

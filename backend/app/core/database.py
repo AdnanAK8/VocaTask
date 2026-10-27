@@ -53,6 +53,16 @@ def ensure_tunnel_if_needed() -> bool:
     if (now - _last_unreachable_time) < _UNREACHABLE_CACHE_TTL:
         return False
 
+    # SSH tunnel auto-launch is strictly opt-in to avoid unwanted subprocesses
+    tunnel_opt_in = os.getenv("ENABLE_SSH_TUNNEL", "").lower() in ("true", "1") or os.getenv("AUTO_SSH_TUNNEL", "").lower() in ("true", "1")
+    if not tunnel_opt_in:
+        return False
+
+    ec2_host = os.environ.get("EC2_HOST")
+    if not ec2_host:
+        logger.debug("Port 5433 is closed and EC2_HOST is not set; skipping SSH tunnel.")
+        return False
+
     # Search for EC2 pem key
     possible_keys = [
         Path(__file__).parent.parent.parent / "my-ec2-VocaTask-key.pem",
@@ -65,7 +75,6 @@ def ensure_tunnel_if_needed() -> bool:
         _last_unreachable_time = now
         return False
 
-    ec2_host = os.environ.get("EC2_HOST", "54.206.74.126")
     ec2_user = os.environ.get("EC2_USER", "ec2-user")
 
     # Fast probe: check if EC2 host has port 22 open before trying to spawn ssh

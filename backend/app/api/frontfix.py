@@ -15,6 +15,28 @@ engine = DiagnosticEngine()
 class FeedbackStore:
     def __init__(self):
         self.feedback_log = []
+        self._db_initialized = False
+
+    def _ensure_db(self):
+        if self._db_initialized:
+            return
+        try:
+            from app.core.database import get_db_connection
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS frontfix_feedback (
+                            id SERIAL PRIMARY KEY,
+                            issue_title TEXT,
+                            is_helpful BOOLEAN,
+                            query_text TEXT,
+                            comment TEXT,
+                            created_at TEXT NOT NULL
+                        )
+                    """)
+            self._db_initialized = True
+        except Exception:
+            pass
 
     def submit_feedback(self, data: dict) -> dict:
         record = {
@@ -25,6 +47,21 @@ class FeedbackStore:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         self.feedback_log.append(record)
+        try:
+            self._ensure_db()
+            from app.core.database import get_db_connection
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO frontfix_feedback (issue_title, is_helpful, query_text, comment, created_at)
+                        VALUES (%s, %s, %s, %s, %s)
+                        """,
+                        (record["issue_title"], record["is_helpful"], record["query_text"], record["comment"], record["timestamp"])
+                    )
+        except Exception:
+            pass
+
         return {
             "success": True,
             "message": "Thank you for your feedback! It helps improve FrontFix AI.",

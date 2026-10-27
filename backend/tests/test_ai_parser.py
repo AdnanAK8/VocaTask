@@ -1,3 +1,4 @@
+import os
 import unittest
 import asyncio
 from datetime import datetime, timedelta, date
@@ -7,8 +8,32 @@ from app.services.ai_parser import (
     parse_voice_to_task
 )
 from app.schemas.task import ExtractedTask
+from app.core.config import settings
+
+SECRET_KEYS = [
+    "GEMINI_API_KEY",
+    "GROQ_API_KEY",
+    "OPENAI_API_KEY",
+    "ELEVENLABS_API_KEY",
+    "ELEVEN_LAB_API_KEY",
+]
 
 class TestAiParser(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls._orig_env = {k: os.environ.get(k, "") for k in SECRET_KEYS}
+        cls._orig_settings = {k: getattr(settings, k, "") for k in SECRET_KEYS}
+        for k in SECRET_KEYS:
+            os.environ[k] = ""
+            setattr(settings, k, "")
+
+    @classmethod
+    def tearDownClass(cls):
+        for k, v in cls._orig_env.items():
+            os.environ[k] = v
+        for k, v in cls._orig_settings.items():
+            setattr(settings, k, v)
+
     def setUp(self):
         # Reference date: Monday, 2026-10-05 14:00:00
         self.ref_dt = datetime(2026, 10, 5, 14, 0, 0)

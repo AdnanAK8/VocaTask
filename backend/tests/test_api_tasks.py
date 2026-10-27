@@ -1,29 +1,24 @@
 import unittest
+from unittest.mock import patch
 import os
-from psycopg.conninfo import conninfo_to_dict
 from fastapi.testclient import TestClient
 from app.main import app
 from app.core.config import settings
 from app.core.database import close_db_pool, DatabaseUnavailableError
 from app.schemas.task import Task
 from app.services import task_store
+from tests.db_test_utils import setup_test_database, teardown_test_database
+
 
 class TestTasksApi(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        test_database_url = os.getenv("TEST_DATABASE_URL")
-        if not test_database_url:
-            raise unittest.SkipTest("Set TEST_DATABASE_URL to a dedicated PostgreSQL database ending in _test.")
-        if not conninfo_to_dict(test_database_url).get("dbname", "").endswith("_test"):
-            raise RuntimeError("Refusing to run API tests unless the database name ends in _test.")
-        settings.DATABASE_URL = test_database_url
-        close_db_pool()
-        task_store.init_db()
+        cls.db_type = setup_test_database()
         cls.client = TestClient(app)
 
     @classmethod
     def tearDownClass(cls):
-        close_db_pool()
+        teardown_test_database()
 
     def setUp(self):
         with task_store.get_db_connection() as conn:
@@ -173,7 +168,7 @@ class TestTasksApiWithoutDatabase(unittest.TestCase):
         )
 
     def test_list_response_uses_existing_task_shape(self):
-        with unittest.mock.patch(
+        with patch(
             "app.api.tasks.task_store.get_tasks",
             return_value=[self.task],
         ):
@@ -185,7 +180,7 @@ class TestTasksApiWithoutDatabase(unittest.TestCase):
         self.assertIn("scheduled_date", response.json()[0])
 
     def test_create_keeps_201_and_task_response(self):
-        with unittest.mock.patch(
+        with patch(
             "app.api.tasks.task_store.create_task",
             return_value=self.task,
         ):
@@ -196,7 +191,7 @@ class TestTasksApiWithoutDatabase(unittest.TestCase):
         self.assertEqual(response.json()["status"], "pending")
 
     def test_missing_task_keeps_404(self):
-        with unittest.mock.patch(
+        with patch(
             "app.api.tasks.task_store.get_task",
             return_value=None,
         ):
@@ -205,7 +200,7 @@ class TestTasksApiWithoutDatabase(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
 
     def test_database_outage_returns_sanitized_503(self):
-        with unittest.mock.patch(
+        with patch(
             "app.api.tasks.task_store.get_tasks",
             side_effect=DatabaseUnavailableError("connection details must not leak"),
         ):
@@ -213,6 +208,7 @@ class TestTasksApiWithoutDatabase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json(), {"detail": "Database temporarily unavailable."})
+
 
 if __name__ == "__main__":
     unittest.main()

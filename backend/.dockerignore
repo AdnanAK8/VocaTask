@@ -7,6 +7,9 @@ env/
 venv/
 .venv/
 .env
+.env.*
+*.pem
+*.key
 tasks.db
 .git
 .gitignore
