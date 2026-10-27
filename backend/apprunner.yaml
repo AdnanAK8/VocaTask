@@ -9,3 +9,10 @@ run:
   network:
     port: 8000
     env: APP_PORT
+  env:
+    - name: DEFAULT_TIMEZONE
+      value: "Asia/Kolkata"
+    - name: DATABASE_POOL_MAX_SIZE
+      value: "5"
+    - name: DATABASE_POOL_TIMEOUT
+      value: "10"

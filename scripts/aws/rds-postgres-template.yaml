@@ -1,0 +1,120 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Amazon RDS PostgreSQL Centralized Database for VocaTask'
+
+Parameters:
+  DBInstanceIdentifier:
+    Type: String
+    Default: 'vocatask-postgres-db'
+    Description: 'Unique identifier for the RDS PostgreSQL DB instance'
+
+  DBName:
+    Type: String
+    Default: 'vocatask'
+    Description: 'The initial database name'
+
+  DBMasterUsername:
+    Type: String
+    Default: 'vocatask_admin'
+    Description: 'Master database username'
+
+  DBMasterPassword:
+    Type: String
+    NoEcho: true
+    Description: 'Master password for the PostgreSQL instance (at least 8 characters)'
+    MinLength: 8
+    MaxLength: 41
+    AllowedPattern: '[a-zA-Z0-9!#$%&*+\-_=]+'
+    ConstraintDescription: 'Must contain only valid alphanumeric characters and punctuation.'
+
+  DBInstanceClass:
+    Type: String
+    Default: 'db.t4g.micro'
+    AllowedValues:
+      - 'db.t4g.micro'
+      - 'db.t3.micro'
+      - 'db.t4g.small'
+      - 'db.t3.small'
+    Description: 'RDS instance class (db.t4g.micro and db.t3.micro are AWS Free Tier eligible)'
+
+  AllocatedStorage:
+    Type: Number
+    Default: 20
+    MinValue: 20
+    MaxValue: 100
+    Description: 'Initial allocated storage in GB (20 GB is within AWS Free Tier)'
+
+  MaxAllocatedStorage:
+    Type: Number
+    Default: 100
+    Description: 'Maximum auto-scaling storage limit in GB'
+
+  PubliclyAccessible:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: 'Set true to allow connection from AWS App Runner / local development, guarded by security group'
+
+  AllowedClientCidr:
+    Type: String
+    Description: 'Restrict PostgreSQL ingress to a trusted IPv4 CIDR, preferably your IP with /32'
+    AllowedPattern: '^(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])/(3[0-2]|[12]?[0-9])$'
+    ConstraintDescription: 'Provide a valid IPv4 CIDR, such as your public IP address with /32.'
+
+Resources:
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: 'Security Group for VocaTask RDS PostgreSQL'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: !Ref AllowedClientCidr
+          Description: 'PostgreSQL access restricted to the configured client CIDR'
+
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Ref DBInstanceIdentifier
+      Engine: postgres
+      EngineVersion: '16.6'
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref AllocatedStorage
+      MaxAllocatedStorage: !Ref MaxAllocatedStorage
+      StorageType: gp3
+      DBName: !Ref DBName
+      MasterUsername: !Ref DBMasterUsername
+      MasterUserPassword: !Ref DBMasterPassword
+      PubliclyAccessible: !Equals [!Ref PubliclyAccessible, 'true']
+      VPCSecurityGroups:
+        - !GetAtt DBSecurityGroup.GroupId
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: '03:00-04:00'
+      PreferredMaintenanceWindow: 'sun:04:30-sun:05:30'
+      MultiAZ: false
+      AutoMinorVersionUpgrade: true
+      DeletionProtection: false
+      Tags:
+        - Key: Project
+          Value: VocaTask
+        - Key: Environment
+          Value: Production
+
+Outputs:
+  DBEndpoint:
+    Description: 'RDS PostgreSQL Hostname / Endpoint'
+    Value: !GetAtt DBInstance.Endpoint.Address
+
+  DBPort:
+    Description: 'RDS PostgreSQL Port'
+    Value: !GetAtt DBInstance.Endpoint.Port
+
+  DatabaseName:
+    Description: 'Default database name'
+    Value: !Ref DBName
+
+  MasterUser:
+    Description: 'Master database user'
+    Value: !Ref DBMasterUsername

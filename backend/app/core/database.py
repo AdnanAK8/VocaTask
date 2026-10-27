@@ -128,7 +128,7 @@ def get_connection_pool() -> ConnectionPool:
             min_size=1,  # ponytail: keep 1 warm connection
             max_size=settings.DATABASE_POOL_MAX_SIZE,
             timeout=settings.DATABASE_POOL_TIMEOUT,
-            kwargs={"connect_timeout": 2, "row_factory": dict_row},
+            kwargs={"connect_timeout": 10, "row_factory": dict_row},
             open=False,
         )
         _pool.open(wait=False)

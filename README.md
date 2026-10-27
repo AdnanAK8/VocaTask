@@ -154,6 +154,14 @@ Important:
 - Store real secrets in a secure environment manager or host secret store
 - The backend checks env configuration in order from a custom path, local `.env`, repo root `.env`, user-level config, and system env vars
 
+To check the task count and newest task in the configured PostgreSQL database (including AWS RDS), run this from the repository root in PowerShell:
+
+```powershell
+.\venv\Scripts\python.exe .\scripts\aws\check_rds_tasks.py
+```
+
+The script uses the same database configuration as the backend. Ensure `backend/.env` contains the correct database settings and that the RDS security group allows your current IP on port 5432.
+
 Start the backend:
 
 ```bash

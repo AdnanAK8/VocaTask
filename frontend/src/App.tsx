@@ -354,113 +354,111 @@ const AppContent = ({
             <span>{pendingCount} {pendingCount === 1 ? 'task' : 'tasks'} left</span>
           </div>
 
-          <div className="task-filter-tabs" role="tablist" aria-label="Task status filters">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={taskFilter === 'all'}
-              className={`filter-tab ${taskFilter === 'all' ? 'active' : ''}`}
-              onClick={() => setTaskFilter('all')}
-            >
-              All
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={taskFilter === 'upcoming'}
-              className={`filter-tab ${taskFilter === 'upcoming' ? 'active' : ''}`}
-              onClick={() => setTaskFilter('upcoming')}
-            >
-              Upcoming ({pendingCount})
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={taskFilter === 'completed'}
-              className={`filter-tab ${taskFilter === 'completed' ? 'active' : ''}`}
-              onClick={() => setTaskFilter('completed')}
-            >
-              Done
-            </button>
-          </div>
+          <div className="task-list-panel">
+            <div className="task-filters" role="tablist" aria-label="Task status filters">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={taskFilter === 'all'}
+                className={taskFilter === 'all' ? 'active' : ''}
+                onClick={() => setTaskFilter('all')}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={taskFilter === 'upcoming'}
+                className={taskFilter === 'upcoming' ? 'active' : ''}
+                onClick={() => setTaskFilter('upcoming')}
+              >
+                Upcoming <span>{pendingCount}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={taskFilter === 'completed'}
+                className={taskFilter === 'completed' ? 'active' : ''}
+                onClick={() => setTaskFilter('completed')}
+              >
+                Done
+              </button>
+            </div>
 
-          <div className="tasks-list" role="list">
-            {visibleTasks.length === 0 ? (
-              <p className="empty-state">
-                {taskFilter === 'completed'
-                  ? 'No completed tasks yet.'
-                  : taskFilter === 'upcoming'
-                    ? 'No upcoming tasks. You are all caught up!'
-                    : 'No tasks yet. Try saying: "Remind me to call mom tomorrow at 6 PM"'}
-              </p>
-            ) : (
-              visibleTasks.map((task) => (
-                <article
-                  key={task.id}
-                  className={`task-row ${task.status === 'completed' ? 'completed' : ''} ${deletingIds.includes(task.id) ? 'deleting' : ''}`}
-                  role="listitem"
-                >
-                  <button
-                    type="button"
-                    className="status-toggle"
-                    onClick={() => handleToggleTask(task.id)}
-                    aria-label={`Mark "${task.title}" as ${task.status === 'completed' ? 'pending' : 'completed'}`}
+            <div className="task-list" role="list">
+              {visibleTasks.length === 0 ? (
+                <p className="empty-state">
+                  {taskFilter === 'completed'
+                    ? 'No completed tasks yet.'
+                    : taskFilter === 'upcoming'
+                      ? 'No upcoming tasks. You are all caught up!'
+                      : 'No tasks yet. Try saying: "Remind me to call mom tomorrow at 6 PM"'}
+                </p>
+              ) : (
+                visibleTasks.map((task) => (
+                  <article
+                    key={task.id}
+                    className={`task-card ${task.status === 'completed' ? 'completed' : ''} ${deletingIds.includes(task.id) ? 'deleting' : ''}`}
+                    role="listitem"
                   >
-                    {task.status === 'completed' && <Check size={14} />}
-                  </button>
+                    <button
+                      type="button"
+                      className={`task-check ${task.status === 'completed' ? 'checked' : ''}`}
+                      onClick={() => handleToggleTask(task.id)}
+                      aria-label={task.status === 'completed' ? 'Mark as pending' : 'Mark as completed'}
+                      title={task.status === 'completed' ? 'Mark as pending' : 'Mark as completed'}
+                    >
+                      {task.status === 'completed' && <Check size={14} />}
+                    </button>
 
-                  <div className="task-details">
-                    <p className="task-title">{task.title}</p>
-                    <div className="task-metadata">
-                      <span>{formatDate(task.scheduled_date)}</span>
-                      {task.scheduled_time && (
-                        <span>
-                          <Clock3 size={12} />
-                          {formatTime(task.scheduled_time)}
-                        </span>
-                      )}
-                      <span className={`badge priority-${task.priority}`}>{task.priority}</span>
-                      <span className="badge category">{task.category}</span>
-                      {task.reminder_required && (
-                        <span className="badge reminder-badge" title="Push alert & chime scheduled">
-                          <Bell size={11} /> Reminder
-                        </span>
-                      )}
+                    <div className="task-details">
+                      <h3>{task.title}</h3>
+                      <p>
+                        {formatDate(task.scheduled_date)}
+                        {task.scheduled_time && (
+                          <>
+                            <span className="detail-separator">·</span>
+                            <Clock3 size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3 }} />
+                            {formatTime(task.scheduled_time)}
+                          </>
+                        )}
+                      </p>
                     </div>
-                  </div>
 
-                  <div className="task-actions">
-                    <button
-                      type="button"
-                      className={`action-btn reminder-toggle ${task.reminder_required ? 'active' : ''}`}
-                      onClick={() => handleToggleReminder(task)}
-                      aria-label={task.reminder_required ? 'Turn off reminder alert' : 'Turn on reminder alert'}
-                      title={task.reminder_required ? 'Reminder alert on (click to mute)' : 'Reminder alert off (click to enable)'}
-                    >
-                      {task.reminder_required ? <Bell size={15} /> : <BellOff size={15} />}
-                    </button>
-                    <button
-                      type="button"
-                      className="action-btn"
-                      onClick={() => openTaskForm(task)}
-                      aria-label={`Edit ${task.title}`}
-                      title="Edit task"
-                    >
-                      <Pencil size={15} />
-                    </button>
-                    <button
-                      type="button"
-                      className="action-btn delete"
-                      onClick={() => handleDeleteTask(task.id)}
-                      aria-label={`Delete ${task.title}`}
-                      title="Delete task"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </article>
-              ))
-            )}
+                    <span className={`priority-tag ${task.priority}`}>{task.priority}</span>
+                    <span className={`category-tag ${task.category}`}>{task.category}</span>
+
+                    <div className="task-actions">
+                      <button
+                        type="button"
+                        className={`task-reminder-btn ${task.reminder_required ? 'active' : 'inactive'}`}
+                        onClick={() => handleToggleReminder(task)}
+                        aria-label={task.reminder_required ? 'Disable reminder' : 'Enable reminder'}
+                        title={task.reminder_required ? 'Reminder alert on (click to mute)' : 'Reminder alert off (click to enable)'}
+                      >
+                        {task.reminder_required ? <Bell size={15} /> : <BellOff size={15} />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openTaskForm(task)}
+                        aria-label={`Edit ${task.title}`}
+                        title="Edit task"
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTask(task.id)}
+                        aria-label={`Delete ${task.title}`}
+                        title="Delete task"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
           </div>
         </section>
       </main>
